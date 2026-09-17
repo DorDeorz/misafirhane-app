@@ -1,0 +1,373 @@
+MİSAFİRHANE REZERVASYON SİSTEMİ - KURULUM VE KULLANIM
+========================================================
+
+Bu, tamamen bilgisayarında/yerelde çalışan, İNTERNET GEREKTİRMEYEN bir
+rezervasyon uygulamasıdır. Tüm veriler "misafirhane.db" dosyasında saklanır
+(bu klasörün içinde otomatik oluşur).
+
+
+1) KURULUM (bir kere yapılır)
+------------------------------
+a) Python kurulu değilse: https://www.python.org/downloads/ adresinden
+   Windows için Python 3.11 veya üzeri sürümü indirip kur.
+   ÖNEMLİ: Kurulum ekranında "Add Python to PATH" kutucuğunu işaretle.
+
+b) Bu klasörü (misafirhane_app) bilgisayarına kopyala (örn. Masaüstü).
+
+c) Windows'ta "Komut İstemi" (cmd) veya "PowerShell" aç, klasöre git:
+       cd Masaustu\misafirhane_app
+
+d) Gerekli kütüphaneleri kur (sadece ilk seferde, internet gerekir):
+       pip install -r requirements.txt
+
+
+2) ÇALIŞTIRMA
+------------------------------
+Aynı klasörde şu komutu çalıştır:
+       python main.py
+
+İLK ÇALIŞTIRMADA: Veritabanı sıfırdan kurulur ve TEK kullanıcı vardır:
+       Kullanıcı adı: admin     Şifre: 1234
+Girişi bu bilgilerle yap. Dilersen "👤 Kullanıcılar" sekmesinden başka
+hesaplar açabilirsin (herkesin yetkisi aynıdır; amaç sadece kimin hangi
+rezervasyonu aldığını görmektir). Veritabanını sıfırlamak istersen:
+klasördeki misafirhane.db dosyasını sil ve uygulamayı yeniden başlat
+(oda listesi ve admin hesabı otomatik yeniden oluşur).
+
+Uygulama açıldıktan sonra İNTERNETE GEREK YOK.
+
+
+3) KULLANIM
+------------------------------
+- "Oda Durumu" sekmesi: Seçtiğin günde hangi oda dolu/boş, kim kalıyor,
+  ödeme yapılmış mı gösterir. Ödeme hücresine ÇİFT TIKLAYARAK
+  ödendi/ödenmedi işaretleyebilirsin (defterdeki + işareti mantığı).
+
+- "Günün Girişleri" sekmesi: O gün check-in yapacak misafirlerin listesi.
+
+- "Yeni Rezervasyon" sekmesi (TEK EKRAN — kaydırma gerektirmez; laptopa uygun):
+    * Sol tarafta TAKVİM (14 gün), sağ tarafta rezervasyon alan kişinin bilgileri
+      ve "Seçilen Odalar" listesi aynı anda görünür; üstte ise "Toplam misafir"
+      sayacı ve "💾 Rezervasyonu Kaydet" butonu sabit durur.
+    1. Takvimde BOŞ bir hücreye tıkla (oda satırı x gün sütunu kesişimi) — giriş günü olur.
+       "Tip" sütunu hangi odanın hangi tip olduğunu (Tek/Double/Aile/Tek+Tek) hatırlatır.
+    2. Aynı gece sayısını AYNI ODADA ileri bir güne tekrar tıklayarak da seçebilirsin
+       (örn. 12'sine tıkla, sonra 15'ine tıkla → 3 gece otomatik hesaplanır). İstersen
+       takvim üstündeki "Gece Sayısı" kutusunu elle de değiştirebilirsin. "Süz:" ile
+       sadece istediğin kadar kişi alacak odaları görünür bırakırsın (opsiyonel).
+    3. Kişi sayısı ve fiyat tipini ayarla → "✚ Listeye Ekle". Fiyat tipleri:
+       Sabit / Üye / Özel. Menüde güncel fiyatlar yazar (örn. "Sabit (1,300₺)");
+       "Özel (kişi başı)" seçince hemen yanında kişi başı GECELİK fiyat alanı açılır
+       (varsayılan olarak Sabit fiyat önerilir, istediğin gibi değiştir — örn. kuruma
+       özel indirim). Seçimin altında canlı özet vardır: "Oda 3 · 900₺ × 2 kişi × 2 gece
+       = 3,600₺". Takvimde aynı tarihlerde BİRDEN FAZLA ODA gerekiyorsa aynı adımları
+       farklı odalar için tekrarla — hepsi sağdaki "Seçilen Odalar" listesine eklenir
+       (her satırda birim fiyat ve toplam tutar görünür, en altta genel toplam yazar).
+       Kişi sayısı bir tahmindir — misafir geldiğinde "Check-in" ekranından kesin sayı
+       (teker teker) girilir ve ücret buna göre güncellenir.
+    4. Sağda rezervasyonu ALAN kişinin Ad Soyad / Telefon / Referans / Not bilgilerini gir
+       (TC No BURADA İSTENMEZ — kağıttaki sisteme uygun olarak TC No, misafir geldiğinde
+       "Check-in" ekranından girilir) ve üstteki "💾 Rezervasyonu Kaydet"e bas.
+
+- "🔑 Check-in" sekmesi (YENİ — misafir geldiğinde BURAYI kullan):
+    * Seçtiğin günde tüm odaları gösterir: ⬜ BOŞ (rezervasyon yok) / 🟨 BEKLENİYOR
+      (rezerve edildi ama misafir henüz gelmedi — kimin rezerve ettiği yazar) /
+      🟦 İÇERİDE (check-in yapıldı, misafir fiilen odada).
+    * "✅ Check-in Yap" butonuna basınca açılan pencerede, odada kalacak kişileri
+      TEKER TEKER ekleyebilirsin (Ad Soyad ve TC No opsiyonel). Oda KAPASİTESİNİ
+      aşamazsın (Tek=1, Double=2, Tek+Tek=3, Aile=4 kişi — sistem otomatik sınırlar).
+    * FİYATLANDIRMA KİŞİ BAŞINADIR, odaya göre değil: örn. Aile odasında 2 kişi kalırsa
+      da, Tek+Tek odasında 2 kişi kalırsa da, aynı gecelik toplam tutar çıkar
+      (600 veya 1300 TL x kişi sayısı). Kişi ekledikçe/çıkardıkça henüz ödenmemiş
+      gecelerin tutarı otomatik güncellenir; zaten ödenmiş geceler değişmez.
+    * "İçeride" olan bir odanın kişilerini sonradan düzenlemek istersen aynı butona
+      (artık "Misafirleri Düzenle" yazar) tekrar basabilirsin.
+
+- "Rezervasyon Yönetimi" sekmesi:
+    * Üstteki menüden Aktif / İptal Edilenler / Hepsi arasında filtre yapabilirsin.
+    * "Grup" sütunu: Aynı rezervasyonda birden fazla oda alındıysa, o odaların
+      hepsinde aynı "grup" kodu görünür — böylece hangi odaların birlikte
+      alındığını anlarsın.
+    * "İptal Et" butonu: Müşteri rezervasyonunu iptal ederse buradan işaretlersin
+      (kayıt silinmez, sadece "İptal Edildi" olarak görünür, istersen geri alabilirsin).
+    * "Oda Değiştir" butonu: Halihazırda kalan bir müşteriyi başka boş bir odaya
+      taşımak için. Değişim tarihini ve yeni odayı seçersin; eski odadaki kalan
+      geceler otomatik olarak yeni odaya aktarılır, zaten ödenmiş geceler varsa
+      ödenmiş bilgisi korunur, misafir listesi de yeni odaya taşınır.
+    * "Excel'e Aktar" butonu: O an ekranda gördüğün listeyi (Aktif/İptal/Hepsi)
+      bir .xlsx dosyasına kaydeder — nereye kaydedeceğini sorar.
+
+- "Oda Durumu" sekmesi — GÜNLÜK GENEL TABLO VE ÖDEME TAKİBİ:
+    * Artık "Tip", "Kişi/Kapasite" (örn. "2/4") ve "Çıkışa Kalan" (kaç gece kaldığı,
+      son gece ise turuncu renkle "🔴 Son gece (yarın çıkış)" uyarısı) sütunları da var.
+    * Tablonun altında "🚪 Bugün Çıkış Yapacaklar" kutusu, o gün sabah 11'e kadar
+      çıkması beklenen misafirleri ayrıca listeler (oda dolulukta artık göründükleri
+      için bu bölüm olmadan onları kaçırabilirsin).
+    * Ödeme hücresine ÇİFT TIKLAYARAK ödendi/ödenmedi işaretle (defterdeki + işareti mantığı).
+    * Diğer sütunlara (Ad Soyad, TC No vb.) ÇİFT TIKLAYARAK o rezervasyonun tam bilgisine
+      ulaşır ve düzenleyebilirsin; açılan pencerede "👥 Odadaki Kişileri Yönet / Check-in"
+      butonuyla da direkt Check-in ekranındaki gibi kişi ekleme/çıkarma yapabilirsin.
+    * "Bu Günü Excel'e Aktar" butonu: seçtiğin günün tüm oda doluluk/ödeme tablosunu
+      Excel'e kaydeder (günlük rapor almak için).
+
+- "Oda Yönetimi" sekmesi: Odaları buradan ekleyip düzenleyebilirsin. Oda tipini
+  değiştirdiğinde kapasite otomatik önerilir (istersen elle değiştirebilirsin —
+  örn. ekstra yatak konursa Tek+Tek'i 3'ten 4'e çıkarmak gibi). "Eski No" girildiğinde,
+  oda telefonuna ulaşmak için resepsiyonda çevrilecek kod otomatik hesaplanır
+  (kod = "1" + eski no, 2 haneli — örn. eski no 14 → 114 çevrilir). 18 odanın hepsinin
+  oda tipi, kapasitesi ve eski no bilgisi zaten dolu geldi.
+
+- "📅 Takvim Görünümü (Ayrı Pencere)" butonu (üstte): Defterdeki 1.jpeg'e benzer,
+  tüm odaların önümüzdeki ~16 günlük doluluğunu tek ekranda gösteren, sadece
+  izleme amaçlı ayrı bir pencere açar (burada da artık "Tip" sütunu var).
+  "◀ Önceki / Sonraki ▶" ile gün aralığını kaydırabilirsin. Buradan da bir isme
+  ÇİFT TIKLAYARAK tam bilgiye ulaşabilirsin.
+
+- ODA DURUMU SİSTEMİ (TEMİZLİK / ARIZA): Artık her odanın durumu oluyor:
+  * "⚠ ARİZALI" — oda tamirde; birkaç gün kapalı kalacak (erişkin bir odanın
+    arızalanması örneği). "Oda Yönetimi" sekmesinden "Arızalı" seçip kaç gün
+    kapalı kalacağını girersin (örn. 3 gün). O süre boyunca takvimde kırmızı
+    "ARIZA" olarak görünür ve kimseye rezerve edilemez; süre dolunca
+    otomatik "Temiz/Boş" durumuna döner. Erken biterse "Temizlik Bitti" deyip
+    kendin açabilirsin.
+  * "🧹 TEMİZLİKTE" — oda boş ama henüz temizlenmedi. Gerekirse oda
+    "Oda Yönetimi"nden elle "Temizlikte" yapılabilir (temizlenince "Temizlik Bitti").
+  * Şu an içinde misafir kalan bir oda, durumu değiştirilemez (sistem engeller).
+  * Yeni Rezervasyon takviminde bu odalar boşluk gibi seçilemez — kapalı günler
+    koyu gri "Temizlikte"/kırmızı "ARIZA" olarak çizilir.
+
+- "🚪 Çıkış" sekmesi: O gün çıkması beklenen misafirleri listeler. "Çıkış Yap"a
+  bastığında misafirin çıkışı kaydedilir (rezervasyon tarihi değişmez, sadece
+  fiilen çıktığı gün işaretlenir). Oda, misafirin çıktığı gün İÇİNDE temizlenip
+  aynı gece yeni bir misafire verilebilir: çıkış günü oda otomatik "Temiz"
+  durumuna geçer ve aynı gün yeni giriş kabul eder (bir gün boyunca kapalı
+  kalmaz).
+
+- "🗓 Tarihi Değiştir" (Rezervasyon detay penceresi): Rezervasyonun giriş/gece
+  sayısını değiştirir, ödemeleri yeni gece planına göre taşır. Eğer yeni planda
+  daha önce ÖDENMİŞ geceler kayboluyorsa sistem seni önce uyarır, sonra o
+  gecelerin ücretini "Çıkan Geceler Ücreti" olarak geçmişe işler.
+
+- GEÇMİŞ GÜNE REZERVASYON ENGELİ: Takvimde bugünden ÖNCEKİ günlere rezervasyon
+  alınamaz (geçmiş günler "−" ile çizilidir). Yeni Rezervasyon ekranında elle
+  geçmiş tarih yazarsan veya misafir adı girmeden önce tüm telefon bilgisi
+  doldurulmazsa sistem uyarı verir.
+
+- TELEFON DOĞRULAMA: Rezervasyon alırken telefon numarası artık doğrulanır
+  (0 ile başlamalı, 10-11 hane; başında "90" yazdıysan otomatik kabul edilir).
+
+- "📈 İstatistik" sekmesi: Ay ve yıl seçip o ayın özetini görürsün: kaç
+  rezervasyon alındı, kaç misafir konakladı, kaç gece kaldı, tahsil edilen ve
+  beklenen toplam gelir.
+
+- "⚙ Ayarlar" sekmesi:
+  * FİYAT YÖNETİMİ: Sabit (1300 TL) ve Üye (600 TL) kişi başı gecelik
+    fiyatlarını buradan değiştirebilirsin. Yeni rezervasyonlar bu fiyatları
+    kullanır; geçmiş kayıtlar etkilenmez.
+  * YEDEKLEME: "Yedek Al" ile misafirhane.db'nin bir kopyasını "yedek"
+    klasörüne alır (tarih/saat damgalı), "Yedekten Geri Yükle" ile bir
+    yedeği geri döndürürsün. Yedekler klasörde listelenir.
+    AYRICA uygulama her KAPANIŞTA, verideki son yedekten bu yana bir
+    değişiklik varsa otomatik yedek alır (gereksiz yığılmayı önlemek için
+    yedekler sayısı en çok 10'da tutulur — eski yedekler otomatik silinir).
+  * GÖRÜNÜM (TEMA): "Sistem (Windows görünümü)" / "Aydınlık" / "Karanlık"
+    seçeneklerinden birini seçersin; seçim anında uygulanır ve kaydedilir.
+    "Sistem" seçeneği Windows'un karanlık/aydınlık ayarını izler. Karanlık
+    temada tablo hücreleri de okunur kontrastla görüntülenir.
+
+- "📜 İşlem Geçmişi" sekmesi: Sistemde yapılan tüm önemli işlemler (rezervasyon
+  alındı, iptal, check-in, çıkış, ödeme, oda durumu değişikliği, kullanıcı
+  işlemleri vb.) kim tarafından, ne zaman yapıldı diye listelenir. Alt üst
+  filtreyle kayıt sayısı seçilebilir.
+
+- "Rezervasyon Yönetimi" listesi uzayınca performans için üstteki menüden
+  "Son 100/250/500" seçerek görünen satır sayısını sınırlayabilirsin
+  (Excel'e aktarımda her zaman TÜM kayıtlar gider).
+
+- ÇIKIŞ SAATİ MANTIĞI: Sistem gece bazlı çalışır. Örneğin biri 19'unda girip
+  2 gece kalıyorsa (19-20. geceler) 21'inde otomatik "çıkmış" sayılır ve o
+  oda 21'inde tekrar rezerve edilebilir hale gelir — elle bir şey yapmana
+  gerek yok, tarih hesaplaması bunu otomatik yönetiyor.
+
+- "Oda Değiştir" ARTIK GELECEK REZERVASYONLAR İÇİN DE ÇALIŞIYOR: Misafir henüz
+  gelmediyse (örn. bugün 10'u ama rezervasyon 12'sinde başlıyor), oda değişikliği
+  tarihinin ne olduğu önemli değil — rezervasyonun tamamı basitçe yeni odaya
+  taşınır. Misafir zaten kalıyorsa (check-in yapılmışsa), eskisi gibi kalan
+  geceler bölünerek yeni odaya aktarılır.
+
+- EKSTRA YATAK: Check-in ekranında "🛏️ Ekstra yatak var" kutucuğunu işaretlersen,
+  o oda için kapasiteyi bu seferlik +1 artırabilirsin (örn. Aile odası normalde
+  4 kişi, ekstra yatakla 5 kişi alabilir). Daha önce ekstra yatakla kaydedilmiş
+  bir check-in'i tekrar açtığında bu kutucuk otomatik işaretli gelir, kayıtlar
+  kaybolmaz.
+
+- 📊 EXCEL RAPORU (üstteki buton): Günlük / Haftalık / Aylık / Özel Tarih Aralığı
+  seçip, o aralıktaki tüm günlerin oda doluluk/ödeme bilgisini tek bir Excel
+  dosyasına aktarabilirsin. Dosyada bir de "Özet" sayfası olur (toplam dolu
+  oda-gece, tahsil edilen/edilmeyen tutarlar, beklenen toplam gelir).
+
+- 👤 KULLANICI SİSTEMİ: Her resepsiyon çalışanı kendi kullanıcı adı/şifresiyle
+  giriş yapar. "Rezervasyon Yönetimi" sekmesindeki "Alan Kullanıcı" sütunundan
+  ve Excel'e aktarılan listeden, hangi rezervasyonu kimin aldığını görebilirsin.
+  Üstteki "🚪 Çıkış Yap" butonuyla, bilgisayarı kapatmadan vardiya değişiminde
+  başka bir kullanıcı giriş yapabilir. "👤 Kullanıcılar" sekmesinden yeni hesap
+  ekleyebilir, şifre sıfırlayabilir veya bir hesabı pasif yapabilirsin.
+
+- KAPASİTE AŞIMI ARTIK KESİNLİKLE ENGELLENİYOR: Yeni Rezervasyon ekranında bir
+  oda seçtiğinde "Bu oda için kişi sayısı" kutusu otomatik olarak o odanın
+  kapasitesiyle sınırlanır (örn. Tek oda için üstüne çıkamazsın). Bu iki
+  koruma yetmezse diye (örn. ileride bir hata olursa), sistemin arka
+  planında da bir güvenlik kontrolü var — kapasiteyi aşan bir kayıt hiçbir
+  şekilde veritabanına yazılamaz.
+
+- KALABALIK GRUPLARI BİRDEN FAZLA ODAYA DAĞITMA: Bazen bir rezervasyonda tek
+  odanın kapasitesinden fazla kişi olabiliyor (örn. 7 kişi). Bunun için Yeni
+  Rezervasyon ekranının üstüne "Toplam misafir" alanını ekledim. Buraya 7 yazarsan:
+    * Yanında "Dağıtılan: 0/7, Kalan: 7 kişi" gibi canlı bir takip yazısı çıkar.
+    * Bir odaya (örn. Aile, kapasite 4) kişi eklediğinde "Dağıtılan: 4/7,
+      Kalan: 3" olarak güncellenir; sıradaki oda seçiminde kişi sayısı kutusu
+      otomatik olarak "3" öner (kapasiteyle sınırlı kalarak).
+    * İkinci bir oda (örn. Tek+Tek, kapasite 3) ekleyince "✓ Dağıtılan: 7/7,
+      Herkese oda atandı" yazısı yeşile döner.
+    * Toplamı belirtip de eksik/fazla dağıtarak kaydetmeye çalışırsan, sistem
+      seni uyarır ("3 kişi eksik dağıtıldı, yine de kaydedilsin mi?") — istersen
+      yine de devam edebilirsin, bu bir engelleme değil hatırlatmadır.
+  "Toplam Kişi Sayısı" alanının ALTINDAKİ ayrı "Sıradaki oda için kaç kişilik
+  yer arıyorsun?" filtresi ise sadece görsel bir süzme aracıdır (o an
+  seçeceğin TEK oda için) — ikisi birbirine karıştırılmasın diye ayrı tutuldu,
+  çünkü büyük bir grup toplamını filtreye yazarsan hiçbir tek oda o kadar
+  kişiyi alamayacağından TÜM odalar yanlışlıkla kilitlenebilirdi (bunu
+  düzelttim).
+
+- FİYAT TİPİ VARSAYILANI: Yeni rezervasyon eklerken "Fiyat Tipi" artık
+  varsayılan olarak "Sabit" seçili geliyor (yanlışlıkla Üye fiyatı
+  seçilmesini önlemek için).
+
+- ZORUNLU ALANLAR: Rezervasyon alırken Ad Soyad ve Telefon zorunlu (TC No BURADA
+  İSTENMEZ). Check-in ekranında ise her kişi için Ad Soyad ve TC No (11 haneli)
+  zorunlu (telefon check-in'de istenmiyor, çünkü zaten rezervasyon alınırken
+  alınmıştı).
+
+- REZERVASYON YÖNETİMİ EKRANI YENİLENDİ:
+  * "🔍 Bul" kutusuna isim/telefon/TC/oda no/referans/kullanıcı adı yazınca liste
+    anında filtrelenir (Ctrl+F mantığı gibi).
+  * "Sırala" menüsünden Giriş Tarihine veya Alınma Tarihine göre (Yeni→Eski /
+    Eski→Yeni) sıralayabilirsin.
+  * "Kişi" sütunu eklendi — artık kaç kişi geleceği tabloda direkt görünüyor.
+  * Bir satıra ÇİFT TIKLAYINCA rezervasyonun tam detayına ulaşırsın: ne zaman
+    alındığı, kim tarafından alındığı, kaç kişi geleceği, kimin adına alındığı,
+    referansı — hepsi tek pencerede.
+  * "Gelmeyenler (No-Show)" filtresi eklendi — bkz. aşağıdaki madde.
+
+- GELMEYEN (NO-SHOW) MİSAFİR TAKİBİ: Bir rezervasyonun giriş günü geçtiği halde
+  check-in yapılmamışsa (misafir gelmemişse), sistem bunu otomatik "Gelmedi
+  (No-Show)" olarak işaretler — elle bir şey yapmana gerek yok. Bu durum:
+  * "Rezervasyon Yönetimi" ekranında satır KIRMIZI renkte gösterilir, "Durum"
+    sütununda "⚠ Gelmedi (No-Show)" yazar, ayrıca "Gelmeyenler (No-Show)"
+    filtresinden sadece bunları listeleyebilirsin.
+  * "Günün Girişleri" ekranında geçmiş bir güne bakarsan, gelmeyen misafirler
+    "⚠ Gelmedi (No-Show)" olarak kırmızı görünür (gelenler yeşil "✓ Geldi").
+  * "Oda Durumu" ekranında da aynı şekilde kırmızı renkle ve "⚠ GELMEDİ
+    (No-Show)" yazısıyla belirtilir.
+  Bir misafir check-in yaptığı anda (Check-in ekranından), bu işaretleme
+  otomatik olarak kalkar ve "Geldi" durumuna geçer.
+
+- GÜNÜN GİRİŞLERİ EKRANINA "Durum" SÜTUNU EKLENDİ: O gün girişi olan her
+  misafir için "✓ Geldi" (check-in yapılmış), "Henüz Gelmedi" (bugün için
+  bekleniyor) veya "⚠ Gelmedi (No-Show)" (geçmiş bir gün için hâlâ gelmemiş)
+  yazar. Bu, Check-in ekranından yapılan işlemlere göre OTOMATİK güncellenir —
+  ayrıca bir şey yapmana gerek yok. Bir satıra çift tıklayarak da tam detaya
+  ulaşabilirsin.
+
+
+4) VERİLERİN YEDEKLENMESİ (ÖNEMLİ!)
+------------------------------
+Tüm veriler "misafirhane.db" dosyasındadır. Bu dosyayı düzenli olarak
+(örn. haftada bir) bir USB belleğe veya farklı bir klasöre kopyalayarak
+yedekle. Bilgisayar bozulursa/değişirse bu dosyayı yeni bilgisayara
+kopyalamak yeterli, tüm geçmiş rezervasyonlar gelir.
+
+
+5) ODALARI DÜZENLEME
+------------------------------
+Gerçek 18 odalık yapın (Lobi: 1-2, 1.Kat: 3-5, 2.Kat: 6-8, 3.Kat: 9-11,
+4.Kat: 12-14, 5.Kat: 15-17, 6.Kat: 18) ve her odanın tipi/kapasitesi/eski
+numarası otomatik yüklendi. "Oda Yönetimi" sekmesinden istersen düzenleyebilirsin.
+
+ÖNEMLİ: Eğer uygulamayı DAHA ÖNCE bir kere açtıysan (misafirhane.db dosyası
+zaten varsa), yeni oda bilgileri otomatik güncellenmez — çünkü program
+sadece veritabanı BOŞSA varsayılan odaları yükler. Bu durumda, aynı klasörde
+şu komutu BİR KERE çalıştır:
+
+    python guncelle_odalar.py
+
+Bu, mevcut 18 odanın tipini, kapasitesini ve eski numarasını (telefon kodu
+için) doğru değerlerle günceller, hiçbir rezervasyon kaydını etkilemez/silmez.
+
+NOT (FİYATLANDIRMA): Sistem KİŞİ BAŞI fiyatlandırma kullanıyor (örn.
+Aile odasında 2 kişi = Tek+Tek odasında 2 kişi ile aynı toplam tutar). Sabit
+ve Üye fiyatları "Ayarlar" sekmesinden yönetilir (varsayılan: 1300 / 600 TL).
+
+NOT (KİŞİ BAŞI FİYAT): Aynı rezervasyonda kalan her kişinin fiyatı AYRI AYRI
+seçilebilir. "Odadaki Kişileri Yönet / Check-in" penceresinde her satırda
+"Fiyat Tipi" (Sabit/Üye/Özel) ve "Gecelik" kutusu vardır; ör. 3 kişi gelen
+odada 1'i Üye, 1'i Sabit, 1'i Özel (elle girilen tutar) ödeyebilir. Kişi
+fiyatları kaydedildikçe odaya ait HENÜZ ÖDENMEMİŞ gecelerin tutarı, odada
+kalan tüm kişilerin toplamına göre otomatik yenilenir. Ödenmiş gece tutarları
+olduğu gibi kalır. Rezervasyon detay penceresinde "Odada Kayıtlı Kişiler"
+bölümünde her kişinin adı, TC'si ve fiyatı görünür (kayıt olarak tutulur).
+
+Eğer bundan ÖNCE oluşturulmuş eski kayıtlardaki tutarlar YENİDEN HESAPLANMAZ
+(geçmiş kayıt olarak kalır) — sadece yeni kayıtlar ve check-in sonrası
+(henüz ödenmemiş) geceler güncel fiyat mantığıyla hesaplanır.
+
+
+6) TEST/DEMO VERİSİ (isteğe bağlı)
+------------------------------
+Sistemi baştan sona denemek için ~2 aylık gerçekçi örnek veri oluşturmak
+istersen (geçmiş/güncel/gelecek rezervasyonlar, check-in yapılmış/yapılmamış
+odalar, ödenmiş/ödenmemiş geceler, iptal örneği, grup rezervasyonu, oda
+değişikliği örneği, ekstra yatak örneği), aynı klasörde şunu çalıştır:
+
+    python test_verisi_olustur.py
+
+Bu, ayrıca 4 test kullanıcısı daha oluşturur (hepsinin şifresi: test1234):
+    ayse / mehmet / fatma / ali
+(admin/1234 yine geçerli kalır.)
+
+Ayrıca bir odanın "Arızalı", bir odanın "Temizlikte" olduğu örnek durumları da
+kurar ki yeni oda durumu sistemini takvimde/oda yönetiminde görebilesin.
+
+ÖNEMLİ: Bu betik sadece TEST amaçlıdır. Gerçek verin varsa çalıştırma —
+üzerine yüzlerce sahte kayıt ekler. Temiz bir deneme için önce
+misafirhane.db dosyasını sil, sonra bu betiği çalıştır.
+
+
+7) "KULLANICI ADI VEYA ŞİFRE HATALI" HATASI ALIRSAN
+------------------------------
+Aynı klasörde şunu çalıştır:
+
+    python giris_kontrol.py
+
+Bu, hangi veritabanı dosyasının kullanıldığını (tam dosya yolu) ve içinde
+hangi kullanıcıların kayıtlı olduğunu gösterir, sonra bir kullanıcı adı/şifre
+kombinasyonunu orada deneyip sonucu doğrudan söyler.
+
+EN SIK GÖRÜLEN NEDEN: Birden fazla "misafirhane_app" klasörün olması (örn.
+Masaüstünde bir tane, İndirilenler'de bir tane, farklı zip'lerden çıkmış eski
+bir tane) ve "test_verisi_olustur.py" ile "main.py"yi FARKLI klasörlerde
+çalıştırmış olman — her klasörün kendi ayrı "misafirhane.db" dosyası olur,
+bir klasörde oluşturduğun kullanıcı diğerinde görünmez. "giris_kontrol.py"
+çıktısındaki dosya yolunu kontrol ederek hangi klasörde olduğunu görebilirsin.
+
+Ayrıca şifre kopyala-yapıştırırken bazen görünmez bir boşluk/satır sonu
+karışabiliyordu — bunu da düzelttim, artık kullanıcı adı ve şifrenin başında/
+sonundaki boşluklar otomatik temizleniyor.
+
+
+8) SONRAKİ ADIMLAR (istersen ekleyebileceğimiz özellikler)
+-----------------------------
+- Tek bir .exe dosyası haline getirme (PyInstaller ile - Python kurmadan
+  direkt çift tıklayıp açılabilir hale getirmek)
+
+Herhangi bir sorun/istek olursa yaz, birlikte geliştirmeye devam ederiz.

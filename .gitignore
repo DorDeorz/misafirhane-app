@@ -1,0 +1,23 @@
+# Veritabanı ve yedekler: veriler asla GitHub'a gitmez
+misafirhane.db
+misafirhane.db-journal
+*.db
+yedekler/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# IDE / VS
+.vs/
+.vscode/
+*.suo
+
+# Dışa aktarma çıktıları
+*.xlsx
+*.csv
+
+# Geçici / sistem
+*.log
+Thumbs.db
