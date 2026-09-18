@@ -21,3 +21,12 @@ __pycache__/
 # Geçici / sistem
 *.log
 Thumbs.db
+
+# PyInstaller / derleme çıktıları
+build/
+dist/
+*.spec
+
+# Üretilen sürüm/güncelleme paketleri
+dagitim/
+surum.txt

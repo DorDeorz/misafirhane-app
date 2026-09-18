@@ -5,6 +5,7 @@ Basit, internetsiz çalışan masaüstü uygulaması.
 """
 
 import sys
+import os
 from datetime import date, datetime
 
 from PySide6.QtWidgets import (
@@ -15,7 +16,7 @@ from PySide6.QtWidgets import (
     QFileDialog, QScrollArea, QSplitter, QGridLayout, QFrame
 )
 from PySide6.QtCore import Qt, QDate
-from PySide6.QtGui import QColor
+from PySide6.QtGui import QColor, QIcon
 
 import database
 import repository
@@ -23,6 +24,7 @@ import export
 import auth
 import loglama
 import tema
+import versiyon
 from database import fiyat_tipi_goster
 from takvim_widget import TakvimGridWidget
 from detay_dialog import RezervasyonDetayDialog, CheckinDialog
@@ -1913,6 +1915,13 @@ class AyarlarTab(QWidget):
         yedek_kutu.setLayout(yedek_layout)
         layout.addWidget(yedek_kutu)
 
+        surum_satir = QHBoxLayout()
+        surum_satir.addStretch(1)
+        surum_label = QLabel(f"{versiyon.UYGULAMA_ADI} — Sürüm {versiyon.SURUM}")
+        surum_label.setStyleSheet("color: #999999; font-size: 11px;")
+        surum_satir.addWidget(surum_label)
+        layout.addLayout(surum_satir)
+
         layout.addStretch()
 
     def temayi_kaydet_uygula(self):
@@ -2251,6 +2260,16 @@ def main():
 
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
+
+    # Dondurulmus (exe) surumde varliklar uygulama klasorundeki assets altindadir
+    if getattr(sys, "frozen", False):
+        taban = getattr(sys, "_MEIPASS", os.path.dirname(sys.executable))
+    else:
+        taban = os.path.dirname(os.path.abspath(__file__))
+    ikon_yolu = os.path.join(taban, "assets", "misafirhane.ico")
+    if os.path.exists(ikon_yolu):
+        app.setWindowIcon(QIcon(ikon_yolu))
+
     tema.temayi_uygula(app, database.get_ayar("tema", tema.TEMA_SISTEM))
 
     # Ilk kurulumda hic kullanici yoksa, once bir hesap olusturulmasi istenir

@@ -6,10 +6,28 @@ SQLite kullanarak yerel, internetsiz çalışan veri yönetimi.
 
 import sqlite3
 import os
+import sys
 import shutil
 from datetime import datetime
 
-DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "misafirhane.db")
+
+def _veri_klasoru():
+    """Kullaniciya ait verilerin (DB, yedekler) saklanacagi klasor.
+
+    Dondurulmus (PyInstaller) surumde program dosyalari okuma-yazma
+    korumali olabileceginden veri %LOCALAPPDATA%\\Misafirhane altina alinir.
+    Gelistirme modunda betigin bulundugu klasor kullanilir.
+    """
+    if getattr(sys, "frozen", False):
+        taban = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
+        return os.path.join(taban, "Misafirhane")
+    return os.path.dirname(os.path.abspath(__file__))
+
+
+VERI_KLASORU = _veri_klasoru()
+os.makedirs(VERI_KLASORU, exist_ok=True)
+
+DB_PATH = os.path.join(VERI_KLASORU, "misafirhane.db")
 
 ODA_TIPLERI = ["Tek", "Double", "Aile", "Tek+Tek"]
 # "Sabit" ve "Uye" fiyati admin panelinden degistirilebilir; "Ozel" rezervasyon
@@ -273,7 +291,7 @@ def gecelik_fiyat(fiyat_tipi, ozel_ucret=None):
 # ---------------- YEDEKLEME ----------------
 
 def yedek_klasoru():
-    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "yedekler")
+    return os.path.join(VERI_KLASORU, "yedekler")
 
 
 def yedek_al():
