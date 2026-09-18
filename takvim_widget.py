@@ -212,11 +212,28 @@ class TakvimGridWidget(QWidget):
 
         if kayit is not None:
             isim = kayit["ad_soyad"]
-            kisa_isim = isim.split(" ")[0] if isim else "Dolu"
-            item = QTableWidgetItem(kisa_isim)
+            geceler = kayit["gece_sayisi"]
+            # Kullanıcı isteği: ad SADECE giriş gününe yazılır; kalışın diğer
+            # geceleri "X" gösterilir. Böylece aynı isimli peş peşe gelen
+            # rezervasyonlar tek blok gibi görünmez (ipucunda tam bilgi var).
+            ilk_gece = (gun_str == kayit["giris_tarihi"])
+            if ilk_gece:
+                kisa_isim = isim.split(" ")[0] if isim else "Dolu"
+                item = QTableWidgetItem(kisa_isim)
+                font = item.font()
+                font.setBold(True)
+                item.setFont(font)
+            else:
+                item = QTableWidgetItem("X")
+                item.setTextAlignment(Qt.AlignCenter)
             tema.renklendir(item, RENK_DOLU)
-            item.setToolTip(f"{isim}\nFiyat: {kayit['fiyat_tipi']}"
-                             + (f"\nReferans: {kayit['referans']}" if kayit["referans"] else ""))
+            giris = datetime.strptime(kayit["giris_tarihi"], "%Y-%m-%d").date()
+            cikis = kayit["cikis_tarihi"] or (giris + timedelta(days=geceler)).isoformat()
+            item.setToolTip(
+                f"{isim}\nGiriş: {kayit['giris_tarihi']} → Çıkış: {cikis} ({geceler} gece)\n"
+                f"Rezervasyon #: {kayit['rez_id']}\nFiyat: {kayit['fiyat_tipi']}"
+                + (f"\nReferans: {kayit['referans']}" if kayit["referans"] else "")
+            )
         elif kilitli:
             item = QTableWidgetItem("SEÇİLDİ")
             tema.renklendir(item, RENK_KILITLI_SECIM)

@@ -4,6 +4,7 @@
 GUI bu fonksiyonları çağırır; SQL burada saklı kalır.
 """
 
+import re
 import uuid
 from datetime import date, datetime, timedelta
 from database import get_connection, gecelik_fiyat, ODA_TIPI_KAPASITE
@@ -253,6 +254,82 @@ def _musaitlik_sorgusu(cur, oda_id, giris_tarihi, gece_sayisi, haric_rez_id=None
         q += " AND r.id != ?"
         params.append(haric_rez_id)
     return cur.execute(q, params).fetchall()
+
+
+# ---------------- ODA DEĞİŞTİRME PARÇALARI / ÖDEME YENİDEN KURMA ----------------
+
+def _odemeleri_yeniden_kur(cur, rez, yeni_giris_tarihi, yeni_gece_sayisi):
+    """Bir rezervasyonun ödemelerini yeni tarih aralığına göre yeniden kurar.
+    Aynı tarihli eski ödemenin ödendi/ödem şekli/notu korunur; kapsam dışı kalan
+    ÖDENMİŞ gecelerin tarihleri döndürülür (UI bu listeyi kullanıcıya gösterir)."""
+    mevcut = cur.execute(
+        "SELECT * FROM odemeler WHERE rezervasyon_id=? ORDER BY tarih", (rez["id"],)
+    ).fetchall()
+    yeni_set = set(g.isoformat() for g in _tarih_araligi(yeni_giris_tarihi, yeni_gece_sayisi))
+    dusen_odenmis = []
+    for o in mevcut:
+        if o["odendi"] and o["tarih"] not in yeni_set:
+            dusen_odenmis.append(o["tarih"])
+    dusen_odenmis.sort()
+
+    cur.execute("DELETE FROM odemeler WHERE rezervasyon_id=?", (rez["id"],))
+    toplam = (rez["gecelik_ucret"] or 0) * (rez["kisi_sayisi"] or 1)
+    for gun in _tarih_araligi(yeni_giris_tarihi, yeni_gece_sayisi):
+        gun_str = gun.isoformat()
+        eski = next((o for o in mevcut if o["tarih"] == gun_str), None)
+        if eski is not None:
+            cur.execute(
+                "INSERT INTO odemeler (rezervasyon_id, tarih, tutar, odendi, odeme_sekli, odeme_notu) "
+                "VALUES (?,?,?,?,?,?)",
+                (rez["id"], gun_str, eski["tutar"] or toplam,
+                 eski["odendi"], eski["odeme_sekli"], eski["odeme_notu"]),
+            )
+        else:
+            cur.execute(
+                "INSERT INTO odemeler (rezervasyon_id, tarih, tutar, odendi) VALUES (?,?,?,0)",
+                (rez["id"], gun_str, toplam),
+            )
+    return dusen_odenmis
+
+
+def _oda_degistirme_devami(cur, rez):
+    """Rez, 'Oda Değiştir' ile ortadan bölünmüş bir rezervasyonun İLK parçasıysa
+    devam (ikinci parça) rezervasyonunu döndürür."""
+    rows = cur.execute(
+        "SELECT r.* FROM rezervasyonlar r "
+        "WHERE r.iptal=0 AND r.id!=? AND r.ad_soyad=? AND r.giris_tarihi>?"
+        "  AND r.notlar LIKE ?",
+        (rez["id"], rez["ad_soyad"], rez["giris_tarihi"],
+         f"%Oda değişikliği: önceki oda ID {rez['oda_id']}%"),
+    ).fetchall()
+    if not rows:
+        return None
+    for r in rows:
+        if r["grup_id"] and rez["grup_id"] and r["grup_id"] != rez["grup_id"]:
+            continue
+        return r
+    return None
+
+
+def _oda_degistirme_oncesi(cur, rez):
+    """Rez bir oda-değiştirme DEĞİŞİMİ (ikinci parça) ise ilk parçasını döndürür."""
+    m = re.search(r"önceki oda ID (\d+)", rez["notlar"] or "")
+    if not m:
+        return None
+    onceki_oda_id = int(m.group(1))
+    rows = cur.execute(
+        "SELECT r.* FROM rezervasyonlar r "
+        "WHERE r.iptal=0 AND r.id!=? AND r.ad_soyad=? AND r.oda_id=? AND r.giris_tarihi<?"
+        "  AND r.notlar NOT LIKE '%Oda değişikliği%'"
+        " ORDER BY r.giris_tarihi DESC LIMIT 1",
+        (rez["id"], rez["ad_soyad"], onceki_oda_id, rez["giris_tarihi"]),
+    ).fetchall()
+    if not rows:
+        return None
+    r = rows[0]
+    if r["grup_id"] and rez["grup_id"] and r["grup_id"] != rez["grup_id"]:
+        return None
+    return r
 
 
 def rezervasyon_olustur(oda_id, ad_soyad, tc_no, telefon, kisi_sayisi,
@@ -1012,7 +1089,12 @@ def rezervasyon_tarih_degistir(rez_id, yeni_giris_tarihi, yeni_gece_sayisi):
     """Rezervasyonun tarih/gece sayısını değiştirir. Yeni tarih geçmişte olamaz.
     Yeni aralıkta cakisma olan rezervasyonlar engellenir.
     Ödemeler yeniden kurulur; zaten ödenmiş geceler TARİH EŞLEŞMESİNE göre korunur.
-    Düşen (artık kapsamda olmayan) ödenmiş geceler için dondurulen listesi döndürülür."""
+    Düşen (artık kapsamda olmayan) ödenmiş geceler için dondurulen listesi döndürülür.
+
+    ODA DEĞİŞİKLİĞİ DENGESİ: Rezervasyon 'Oda Değiştir' ile ortadan bölünmüşse
+    (iki ayrı rezervasyon, aynı misafir), bu parçalardan birinin tarihi/gece sayısı
+    değiştirilirken diğer parça da otomatik dengelenir. Amaç: aynı anda iki odada
+    görünme (çakışma) oluşmamalı ve toplam gece sayısı korunmalı."""
     bugun = date.today().isoformat()
     if yeni_giris_tarihi < bugun:
         raise ValueError("Geçmiş tarihe rezervasyon taşınamaz.")
@@ -1028,57 +1110,93 @@ def rezervasyon_tarih_degistir(rez_id, yeni_giris_tarihi, yeni_gece_sayisi):
         if not rez:
             raise ValueError("Rezervasyon bulunamadı.")
 
-        cakisma = _musaitlik_sorgusu(cur, rez["oda_id"], yeni_giris_tarihi, yeni_gece_sayisi, haric_rez_id=rez_id)
+        devam = _oda_degistirme_devami(cur, rez)
+        oncesi = _oda_degistirme_oncesi(cur, rez)
+
+        if devam:
+            # İlk parça düzenleniyor: kesim (oda değişim) tarihi sabit kalır,
+            # toplam gece sayısı iki parçaya paylaştırılır.
+            kesim = devam["giris_tarihi"]
+            if yeni_giris_tarihi >= kesim:
+                raise ValueError(
+                    f"Giriş tarihi ({yeni_giris_tarihi}) oda değişim tarihi olan "
+                    f"{kesim}'den sonra kalamaz. Devam rezervasyonunun girişini düzenleyebilirsin."
+                )
+            ilk_gece = (datetime.strptime(kesim, "%Y-%m-%d").date()
+                        - datetime.strptime(yeni_giris_tarihi, "%Y-%m-%d").date()).days
+            if yeni_gece_sayisi <= ilk_gece:
+                raise ValueError(
+                    f"Gece sayısı, oda değişim tarihine kadar olan kısmı ({ilk_gece} gece) "
+                    f"ancak kapsıyor; devam rezervasyonu kalması için "
+                    f"en az {ilk_gece + 1} gece girilmelidir."
+                )
+            devam_gece = yeni_gece_sayisi - ilk_gece
+            efektif_giris = yeni_giris_tarihi
+            efektif_gece = ilk_gece
+        else:
+            efektif_giris = yeni_giris_tarihi
+            efektif_gece = yeni_gece_sayisi
+            devam_gece = None
+
+        cakisma = _musaitlik_sorgusu(cur, rez["oda_id"], efektif_giris, efektif_gece, haric_rez_id=rez_id)
         if cakisma:
             isimler = ", ".join(c["ad_soyad"] for c in cakisma)
             raise ValueError(f"Bu tarihler hedef odada dolu: {isimler}.")
 
-        mevcut_odemeler = cur.execute(
-            "SELECT * FROM odemeler WHERE rezervasyon_id=? ORDER BY tarih", (rez_id,)
-        ).fetchall()
-        eski_aralik = set(_tarih_araligi(rez["giris_tarihi"], rez["gece_sayisi"]))
-        yeni_aralik = _tarih_araligi(yeni_giris_tarihi, yeni_gece_sayisi)
-        yeni_tarihler = [g.isoformat() for g in yeni_aralik]
-
-        # düşen ödenmiş geceler: eski aralıkta olan ama yeni aralıkta olmayan tarihler ile
-        # yeni aralık dışındaki ödenmiş odeme satirlari (tarih eşleşmesi korunur)
-        yeni_set = set(yeni_tarihler)
-        dusen_odenmis = []
-        for o in mevcut_odemeler:
-            if o["odendi"] and o["tarih"] not in yeni_set:
-                dusen_odenmis.append(o["tarih"])
-        dusen_odenmis.sort()
-
-        # odemeleri yeniden kur
-        cur.execute("DELETE FROM odemeler WHERE rezervasyon_id=?", (rez_id,))
-        gecelik_toplam = rez["gecelik_ucret"] * rez["kisi_sayisi"]
-        for gun in yeni_aralik:
-            # ayni tarihli eski ödeme varsa ödendi/odeme_sekli durumunu koru
-            eski_od = next((o for o in mevcut_odemeler if o["tarih"] == gun.isoformat()), None)
-            if eski_od is not None:
-                cur.execute(
-                    "INSERT INTO odemeler (rezervasyon_id, tarih, tutar, odendi, odeme_sekli, odeme_notu) "
-                    "VALUES (?,?,?,?,?,?)",
-                    (rez_id, gun.isoformat(), eski_od["tutar"] or gecelik_toplam,
-                     eski_od["odendi"], eski_od["odeme_sekli"], eski_od["odeme_notu"]),
-                )
-            else:
-                cur.execute(
-                    "INSERT INTO odemeler (rezervasyon_id, tarih, tutar, odendi) VALUES (?,?,?,0)",
-                    (rez_id, gun.isoformat(), gecelik_toplam),
-                )
-
+        dusen_odenmis = _odemeleri_yeniden_kur(cur, rez, efektif_giris, efektif_gece)
         cur.execute(
             "UPDATE rezervasyonlar SET giris_tarihi=?, gece_sayisi=? WHERE id=?",
-            (yeni_giris_tarihi, yeni_gece_sayisi, rez_id),
+            (efektif_giris, efektif_gece, rez_id),
         )
+
+        ek_not = ""
+        if devam:
+            cakisma2 = _musaitlik_sorgusu(
+                cur, devam["oda_id"], devam["giris_tarihi"], devam_gece, haric_rez_id=devam["id"])
+            if cakisma2:
+                isimler = ", ".join(c["ad_soyad"] for c in cakisma2)
+                raise ValueError(f"Devam odası bu tarihlerde dolu: {isimler}.")
+            dusen_odenmis += _odemeleri_yeniden_kur(
+                cur, devam, devam["giris_tarihi"], devam_gece)
+            cur.execute("UPDATE rezervasyonlar SET gece_sayisi=? WHERE id=?", (devam_gece, devam["id"]))
+            ek_not += f" | devam oda id {devam['oda_id']}" + (f" -> {devam_gece} gece")
+
+        if oncesi and not devam:
+            yeni_oncesi_gece = (datetime.strptime(yeni_giris_tarihi, "%Y-%m-%d").date()
+                                - datetime.strptime(oncesi["giris_tarihi"], "%Y-%m-%d").date()).days
+            if yeni_giris_tarihi <= oncesi["giris_tarihi"]:
+                raise ValueError(
+                    "Yeni giriş tarihi, oda değişiminden önceki rezervasyonun başlangıcına "
+                    "eşit veya öncesinde. Önceki rezervasyonun tarihi elle düzenlenmeli."
+                )
+            if yeni_oncesi_gece < oncesi["gece_sayisi"]:
+                # devamın girişi öne alındı: önceki parçanın geceleri kesimden sonrasını
+                # kapsamasın (çakışmayı önlemek için kısaltılır)
+                cakisma3 = _musaitlik_sorgusu(
+                    cur, oncesi["oda_id"], oncesi["giris_tarihi"], yeni_oncesi_gece,
+                    haric_rez_id=oncesi["id"])
+                if cakisma3:
+                    isimler = ", ".join(c["ad_soyad"] for c in cakisma3)
+                    raise ValueError(f"Önceki oda bu tarihlerde dolu: {isimler}.")
+                dusen_odenmis += _odemeleri_yeniden_kur(
+                    cur, oncesi, oncesi["giris_tarihi"], yeni_oncesi_gece)
+                cur.execute(
+                    "UPDATE rezervasyonlar SET gece_sayisi=? WHERE id=?",
+                    (yeni_oncesi_gece, oncesi["id"]))
+                ek_not += f" | önceki oda id {oncesi['oda_id']} -> {yeni_oncesi_gece} gece"
+
         conn.commit()
         loglama.islem_yaz(
             "rezervasyon_tarih",
             f"{rez['ad_soyad']} (Oda {rez['oda_no']}) tarihi değiştirildi: "
-            f"{rez['giris_tarihi']}+{rez['gece_sayisi']} -> {yeni_giris_tarihi}+{yeni_gece_sayisi}",
+            f"{rez['giris_tarihi']}+{rez['gece_sayisi']} -> {efektif_giris}+{efektif_gece}{ek_not}",
         )
         odeme_tutarlarini_guncelle(rez_id)
+        if devam:
+            odeme_tutarlarini_guncelle(devam["id"])
+        if oncesi and not devam:
+            odeme_tutarlarini_guncelle(oncesi["id"])
+        dusen_odenmis.sort()
         return dusen_odenmis
     except Exception:
         conn.rollback()

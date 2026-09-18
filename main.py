@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (
     QTabWidget, QLabel, QPushButton, QTableWidget, QTableWidgetItem,
     QDateEdit, QComboBox, QLineEdit, QSpinBox, QFormLayout, QMessageBox,
     QHeaderView, QGroupBox, QCheckBox, QTextEdit, QDialog, QDialogButtonBox,
-    QFileDialog, QScrollArea, QSplitter, QGridLayout, QFrame
+    QFileDialog, QScrollArea, QSplitter, QGridLayout, QFrame, QAbstractItemView
 )
 from PySide6.QtCore import Qt, QDate
 from PySide6.QtGui import QColor, QIcon
@@ -924,57 +924,192 @@ class YeniRezervasyonTab(QWidget):
 # ODA DEĞİŞTİR DİYALOĞU
 # ============================================================
 class OdaDegistirDialog(QDialog):
+    """Yeni oda seçimi; yeni rezervasyon akışındaki gibi tüm odaları tabloda
+    gösterir. Renkler: yeşil = seçilen aralıkta boş, kırmızı = aralıkta
+    rezervasyonlu, gri = kullanılamaz (temizlikte/arızalı)."""
+
     def __init__(self, rez_row, parent=None):
         super().__init__(parent)
         self.rez_row = rez_row
         self.setWindowTitle(f"Oda Değiştir - {rez_row['ad_soyad']}")
-        self.setMinimumWidth(400)
+        self.setMinimumWidth(760)
 
         layout = QVBoxLayout(self)
 
         bilgi = QLabel(
             f"<b>{rez_row['ad_soyad']}</b> şu an <b>{rez_row['kat_adi']} - Oda {rez_row['oda_no']}</b>'de kalıyor.\n"
             f"Giriş: {rez_row['giris_tarihi']}  |  {rez_row['gece_sayisi']} gece\n\n"
-            f"Not: Misafir henüz gelmediyse (rezervasyon ileri tarihte veya bugün check-in yapılmadıysa) "
-            f"tarih seçimi önemli değil — tüm rezervasyon yeni odaya taşınır."
+            f"Tablodan yeni odayı seç. Yeşil satırlar bu aralıkta boş odalar."
         )
         bilgi.setWordWrap(True)
         layout.addWidget(bilgi)
 
-        form = QFormLayout()
+        ust = QHBoxLayout()
 
+        form = QFormLayout()
         self.degisim_tarihi = QDateEdit(str_to_qdate(rez_row["giris_tarihi"]))
         self.degisim_tarihi.setCalendarPopup(True)
+        self.degisim_tarihi.dateChanged.connect(lambda *_: self._tabloyu_guncelle())
         form.addRow("Değişim Tarihi:", self.degisim_tarihi)
+        ust.addLayout(form)
 
-        self.yeni_oda_combo = QComboBox()
-        for oda in repository.oda_listesi():
-            if oda["id"] != rez_row["oda_id"]:
-                self.yeni_oda_combo.addItem(
-                    f"{oda['kat_adi']} - Oda {oda['oda_no']} ({oda['oda_tipi']})", oda["id"]
-                )
-        form.addRow("Yeni Oda:", self.yeni_oda_combo)
+        self.aralik_etiketi = QLabel("")
+        self.aralik_etiketi.setStyleSheet("font-style: italic; color: #34495e;")
+        host = QHBoxLayout()
+        host.addWidget(self.aralik_etiketi)
+        host.addStretch()
+        ust.addLayout(host, stretch=1)
 
-        layout.addLayout(form)
+        layout.addLayout(ust)
+
+        self.tablo = QTableWidget()
+        self.tablo.setColumnCount(5)
+        self.tablo.setHorizontalHeaderLabels(
+            ["Oda", "Tip", "Kapasite", "Oda Durumu", "Bu Aralıkta Müsaitlik"]
+        )
+        hh = self.tablo.horizontalHeader()
+        hh.setSectionResizeMode(QHeaderView.Stretch)
+        hh.setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        hh.setSectionResizeMode(2, QHeaderView.ResizeToContents)
+        hh.setSectionResizeMode(3, QHeaderView.ResizeToContents)
+        self.tablo.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.tablo.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.tablo.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.tablo.verticalHeader().setVisible(False)
+        self.tablo.verticalHeader().setDefaultSectionSize(26)
+        self.tablo.setMinimumHeight(280)
+        self.tablo.itemSelectionChanged.connect(self._secim_etiketi_guncelle)
+        self.tablo.itemDoubleClicked.connect(lambda _: self._kabul())
+        layout.addWidget(self.tablo)
+
+        self.secim_etiketi = QLabel("Oda seçilmedi — tablodan bir satıra tıkla.")
+        self.secim_etiketi.setStyleSheet("font-weight: 700; color: #196f3d;")
+        layout.addWidget(self.secim_etiketi)
 
         uyari = QLabel(
-            "Not: Eski odadaki kalan geceler silinip yeni odaya taşınacak.\n"
-            "Zaten ödenmiş geceler varsa ödendi bilgisi korunur."
+            "Not: Eski odadaki kalan geceler silinip yeni odaya taşınacak. "
+            "Zaten ödenmiş geceler varsa ödendi bilgisi korunur.\n"
+            "Yeşil = boş · Kırmızı = bu aralıkta rezervasyonlu · Gri = kullanılamaz. "
+            "Satıra çift tık → odaya taşı."
         )
         uyari.setStyleSheet("font-style: italic;")
         uyari.setWordWrap(True)
         layout.addWidget(uyari)
 
         btns = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        btns.accepted.connect(self.accept)
+        btns.accepted.connect(self._kabul)
         btns.rejected.connect(self.reject)
         layout.addWidget(btns)
+
+        self._tabloyu_guncelle()
 
     def secilen_tarih(self):
         return qdate_to_str(self.degisim_tarihi.date())
 
+    def _etkin_aralik(self):
+        cikis = repository.cikis_tarihi_hesapla(
+            self.rez_row["giris_tarihi"], self.rez_row["gece_sayisi"]
+        )
+        baslangic = max(self.rez_row["giris_tarihi"], self.secilen_tarih())
+        gun = (datetime.strptime(cikis, "%Y-%m-%d")
+               - datetime.strptime(baslangic, "%Y-%m-%d")).days
+        return baslangic, gun, cikis
+
+    def _tabloyu_guncelle(self):
+        self.tablo.setRowCount(0)
+        baslangic, gun, cikis = self._etkin_aralik()
+        if gun <= 0:
+            self.aralik_etiketi.setText("Bu rezervasyonun çıkışı yapılmış — taşıma aralığı yok.")
+        else:
+            self.aralik_etiketi.setText(
+                f"Kontrol aralığı: {baslangic} → {cikis} ({gun} gece) · mevcut oda hariç."
+            )
+
+        durum_metni = {"temiz": "Temiz", "temizlikte": "Temizlikte", "arizali": "Arızalı"}
+        ilk_uygun = None
+        satir = 0
+        for oda in repository.oda_listesi():
+            if oda["id"] == self.rez_row["oda_id"]:
+                continue
+            if gun > 0:
+                cakisma = repository.musaitlik_kontrol(oda["id"], baslangic, gun)
+            else:
+                cakisma = []
+
+            kullanilabilir = oda["aktif_durum"] == "temiz"
+            if gun <= 0:
+                mus_metni = "—"
+            elif not cakisma:
+                mus_metni = "✓ Boş"
+            else:
+                isimler = ", ".join(c["ad_soyad"] for c in cakisma)
+                if len(isimler) > 42:
+                    isimler = isimler[:42] + "…"
+                mus_metni = f"⚠ {len(cakisma)} rezervasyon: {isimler}"
+
+            self.tablo.insertRow(satir)
+            oda_item = QTableWidgetItem(f"{oda['kat_adi']} - Oda {oda['oda_no']}")
+            oda_item.setData(Qt.UserRole, oda["id"])
+            items = [
+                oda_item,
+                QTableWidgetItem(oda["oda_tipi"]),
+                QTableWidgetItem(str(oda["kapasite"] or 1)),
+                QTableWidgetItem(durum_metni.get(oda["aktif_durum"], oda["aktif_durum"])),
+                QTableWidgetItem(mus_metni),
+            ]
+            for col, item in enumerate(items):
+                self.tablo.setItem(satir, col, item)
+
+            if not kullanilabilir:
+                renk = QColor("#d5dbdb")
+                for item in items:
+                    item.setBackground(renk)
+                    item.setForeground(QColor("#616a6b"))
+                    item.setFlags(item.flags() & ~Qt.ItemIsEnabled)
+            elif cakisma:
+                renk = QColor("#fadbd8")
+                for item in items:
+                    item.setBackground(renk)
+                    item.setForeground(QColor("#922b21"))
+            else:
+                renk = QColor("#d5f5e3")
+                for item in items:
+                    item.setBackground(renk)
+                    item.setForeground(QColor("#1e8449"))
+                if ilk_uygun is None:
+                    ilk_uygun = satir
+            satir += 1
+
+        if ilk_uygun is not None:
+            self.tablo.selectRow(ilk_uygun)
+
+    def _secim_etiketi_guncelle(self):
+        oda_id = self.secilen_oda_id()
+        if oda_id is None:
+            self.secim_etiketi.setText("Oda seçilmedi — tablodan bir satıra tıkla.")
+            self.secim_etiketi.setStyleSheet("font-weight: 700; color: #922b21;")
+        else:
+            satir = self.tablo.currentRow()
+            isim = self.tablo.item(satir, 0).text() if satir >= 0 else "?"
+            self.secim_etiketi.setText(f"Seçilen oda: {isim}")
+            self.secim_etiketi.setStyleSheet("font-weight: 700; color: #196f3d;")
+
     def secilen_oda_id(self):
-        return self.yeni_oda_combo.currentData()
+        if not self.tablo.selectionModel().hasSelection():
+            return None
+        satir = self.tablo.currentRow()
+        if satir < 0:
+            return None
+        item = self.tablo.item(satir, 0)
+        if item is None:
+            return None
+        return item.data(Qt.UserRole)
+
+    def _kabul(self):
+        if self.secilen_oda_id() is None:
+            QMessageBox.warning(self, "Oda Seçilmedi", "Önce tablodan bir oda satırına tıkla.")
+            return
+        self.accept()
 
 
 # ============================================================
