@@ -5,7 +5,7 @@
 Her sürümde SURUM arttirilir; guncelleme aracı ve kurulum paketi bu değeri kullanır."""
 
 UYGULAMA_ADI = "Misafirhane Rezervasyon"
-SURUM = "1.0.4"
+SURUM = "1.0.4.1"
 
 YENILIKLER = {
     "1.0.0": "İlk yayın sürümü. Rezervasyon, oda durumu, takvim, rapor ve yedekleme.",
@@ -38,6 +38,12 @@ YENILIKLER = {
              "kompakt tema. Gece sayısı uzatma/kısaltma artık içerideki misafir için "
              "de çalışır; tarih değişikliği çakıştığında 'gece sayısını azalt' önerisi "
              "ve onay akışı eklendi.",
+    "1.0.4.1": "Kurulum Aracı (tek dosya): Yükle / Güncelle / Tamir Et / Kaldır "
+                "işlemlerini tek exe'den yönetir. Programın durumunu (kurulu sürüm, "
+                "bozukluk) otomatik algılar, gömülü kurulumu UAC ile çalıştırır; "
+                "arayüz Windows'un koyu/açık mod ayarıyla otomatik eşleşir. "
+                "Kaldırma sırasında veriler (%LOCALAPPDATA%\\Misafirhane) korunur. "
+                "Eski tek amaçlı hibrit Kurulum exe'sinin yerini alır.",
 }
 
 

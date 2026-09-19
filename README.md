@@ -69,11 +69,24 @@ Uygulama 1366×768 gibi laptop ekranlarında rahat kullanılacak şekilde yenide
 
 EXE dosyaları GitHub **Releases** sayfasında ayrı tutulur: https://github.com/DorDeorz/misafirhane-app/releases
 
-- `Misafirhane_Kurulum_<sürüm>.exe` — **yeni bilgisayarlara** kurulum için (Program Files'a kurar, masaüstü + başlat menüsü kısayolu, kaldırıcı).
+- `Misafirhane_Kurulumu_<sürüm>.exe` — **çok amaçlı Kurulum Aracı**: yeni bilgisayara kurar, kurulu sürümü yerinde **Günceller** (verilere dokunmaz), bozuk kurulumu **Tamir Eder** ve programı **Kaldırır**. Programın durumunu otomatik algılar; arayüz Windows'un koyu/açık mod ayarıyla otomatik eşleşir. 1.0.4'teki tek amaçlı `Misafirhane_Kurulum` exe'sinin yerini alır.
 - `Misafirhane_Guncelleme_<sürüm>.exe` — **kurulu olan uygulamayı** yerinde günceller (yalnızca değişen dosyalar, verilere dokunmaz).
 - `Misafirhane_<sürüm>.exe` — sürümün tek dosyalık (standalone) derlenmiş uygulaması; reponun kökünde de tutulur.
 
 Veriler uygulama klasörüne değil, `%LOCALAPPDATA%\Misafirhane\` altına yazılır. Böylece güncelleme/kaldırma işlemleri kayıtlı verileri korur.
+
+### Kurulum Aracı (`Misafirhane_Kurulumu.exe`)
+
+Araç, `Misafirhane Rezervasyon` klasörünü ve kayıt defterini tarayarak programın durumunu gösterir:
+
+| Buton | Ne yapar? |
+|-------|-----------|
+| **Yükle** | Bilgisayarda kurulum yoksa kurar (UAC onayı açılır). |
+| **Güncelle** | Kurulu sürümü yerinde günceller; veriler korunur. |
+| **Tamir Et** | Dosyaları yeniden yazarak bozuk kurulumu onarır. |
+| **Uygulamayı Kaldır** | Programı kaldırır; **veriler `%LOCALAPPDATA%\Misafirhane` altında korunur**. |
+
+Varsayılan tema Windows'un koyu/açık mod ayarından okunur. Uygulama açıkken güncelleme/tamir/kaldırma yapılırsa `Misafirhane.exe` önce otomatik kapatılır. 1.0.4.1 sürümünün SHA256'sı: `2D72A5BEC08BA70A6D0945B0FF82AB537D4B8737E6A8E579BB1D93C33724BD18`.
 
 > **Geliştirme veritabanı** (`misafirhane.db`) ve **test veritabanı** (`misafirhane_deneme.db`) gizli veriler içerdiği için **asla GitHub'a yüklenmez** (`.gitignore` engeller). Test/senaryo verisi yalnızca yerel makinede tutulur.
 
@@ -128,6 +141,7 @@ loglama.py             İşlem geçmişi (denetim izi)
 versiyon.py            Sürüm bilgisi ve sürüm notları
 guncelleme_olustur.py  Güncelleme paketi/üretme aracı
 guncelleme_araci/      Güncelleme uygulama aracı (exe kaynağı)
+kurulum_araci.py       Kurulum Aracı (Yükle/Güncelle/Tamir/Kaldır) — Tkinter launcher
 kurulum.iss            Inno Setup kurulum betiği
 ```
 
@@ -135,6 +149,7 @@ kurulum.iss            Inno Setup kurulum betiği
 
 | Sürüm | Not |
 |-------|-----|
+| 1.0.4.1 | **Kurulum Aracı** (tek exe): Yükle / Güncelle / Tamir Et / Kaldır; programın durumu otomatik algılanır, gömülü kurulum UAC ile çalışır; arayüz Windows'un koyu/açık mod ayarına göre otomatik tema seçer; kaldırma sırasında veriler korunur. Eski hibrit `Misafirhane_Kurulum` exe'sinin yerine geçer. |
 | 1.0.4 | **KBS Bildirimi**: bekleyen giriş/çıkışlar, şahıs TC doğrulaması, gönderildi işaretleme, `kbs_takip.db`, Excel çıktısı. **Yabancı misafir KBS alanları** check-in'de toplanır ve eksik bilgi engellenir; **TC doğrulama**. **Arayüz yeniden tasarımı**: kompakt tema + rozetler, rezervasyon detayı splitter düzeni, oda işlemlerinin tablo altı aksiyon çubuğuna taşınması (buton sığmama sorunu çözüldü), birincil/ikincil buton stilleri, Oda Durumu çift özet düzeltmesi, gerçek kullanıcı adı gösterimi. **Gece uzat/kısalt** içerideki misafirde de çalışır; **çakışmada gece azaltma önerisi + onay** akışı; canlı çıkış/çakışma önizlemesi. |
 | 1.0.3 | Çok odalı rezervasyon (tek kayıtta birden çok oda, oda satırı bazlı check-in/çıkış/oda değiştirme); **Geçmiş Kayıtlar** görünümü (çıkışı yapılmış eski misafirler, arama/sıralama/Excel); Günün Girişleri'nde çok odalı rezervasyon tek satır + oda bazlı Geldi/Gelmedi/Bekleniyor durumu; performans (arama yalnızca Ad Soyad'da anında filtrelenir, gecikmeli yenileme + toplu sorgular — büyük listelerde kasma yok); düzeltmeler: Oda Değiştir / Tarih Değiştir pencerelerinin açılmama hatası, iptal listesinde satır renklendirme çökmesi |
 | 1.0.2.2 | Hata düzeltmesi: oda değiştirme sonrası giriş tarihi değiştirilince aynı gece iki odada görünme sorunu; oda parçaları (önceki/devam) artık tarih değişikliğinde otomatik dengelenir, ödemeler yeniden kurulur |

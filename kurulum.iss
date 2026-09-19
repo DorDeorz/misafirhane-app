@@ -27,6 +27,20 @@ PrivilegesRequired=admin
 ArchitecturesInstallIn64BitMode=x64compatible
 CloseApplications=no
 RestartApplications=no
+; Ayni exe HEM kurulum HEM guncelleme icindir: mevcut kurulum varsa dosyalar
+; ignoreversion ile uzerine yazilir (tam guncelleme), yoksa sifirdan kurar.
+UsePreviousAppDir=yes
+DirExistsWarning=no
+
+[Code]
+function InitializeSetup(): Boolean;
+var
+  Sonuc: Integer;
+begin
+  // Guncelleme/tamir sirasinda uygulama aciksa dosyalar kilitli kalmasin
+  Exec('taskkill', '/F /T /IM Misafirhane.exe', '', SW_HIDE, ewWaitUntilTerminated, Sonuc);
+  Result := True;
+end;
 
 [Languages]
 Name: "turkish"; MessagesFile: "compiler:Languages\Turkish.isl"

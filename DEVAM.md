@@ -3,6 +3,31 @@
 Bu dosya, evdeki masaüstü bilgisayardaki opencode oturumunun kaldığı yerden devam
 edebilmesi için hazırlandı. İlk iş olarak okuyun.
 
+## DEVAM (20 Eylül 2026) — 1.0.4.1 (push edildi)
+
+Bu oturumda yapıldı:
+
+### Kurulum Aracı (tek exe) — `kurulum_araci.py` (YENİ)
+- Tkinter launcher: kurulum durumu kayıt defterinden (`HKLM\...\Uninstall\{AppId}_is1`, KEY_WOW64_64KEY)
+  ve `surum.txt`'ten okunur; **Yükle / Güncelle / Tamir Et / Uygulamayı Kaldır** butonları.
+- Gömülü `dist\kurulum\Misafirhane_Kurulum.exe` (temiz hibrit: `UsePreviousAppDir=yes`,
+  `DirExistsWarning=no`, `[Code] InitializeSetup` taskkill) ShellExecuteEx `runas` (UAC) ile
+  çalıştırılıp beklenir (SEE_MASK_NOCLOSEPROCESS).
+- Kaldırma: `UninstallString` (unins000.exe) + `taskkill /F /T /IM Misafirhane.exe`;
+  veriler `%LOCALAPPDATA%\Misafirhane` korunur; 4. buton kırmızı (tehlike) stil.
+- Tema **Windows koyu/açık moduna bağlandı**: `HKCU\...\Themes\Personalize\AppsUseLightTheme`
+  (0=karanlık). `MISAFIRHANE_TEMA=acik|karanlik` ile zorlanabilir. Ayrı
+  `kurulum_araci_karanlik.py` kaldırıldı; tek exe: `dagitim\Misafirhane_Kurulumu_1.0.4.1.exe`
+  (SHA256 `2D72A5BE...`).
+- Sürüm 1.0.4 → 1.0.4.1 (`versiyon.py` + `surum.txt`); Kurulum exe'si `/DMyAppVersion=1.0.4.1`.
+  Launcher "Paket sürümü" için `--add-data versiyon.py;.` ile `versiyon.py`'yi gömer.
+- README güncellendi (Kurulum Aracı bölümü + 1.0.4.1 sürüm notu).
+- Commit kapsamı: `kurulum_araci.py`, `kurulum.iss`, `versiyon.py`, `README.md`, `DEVAM.md`.
+
+### Push edilmedi (bekliyor)
+- `guncelleme_olustur.py` A+B (TAM paket) + `guncelleme_araci/guncelle.py` sürüm kapısı — commit'siz.
+- GitHub Releases'e asset yükleme — kullanıcı onayı bekleniyor.
+
 ## DEVAM (19 Eylül 2026) — 1.0.4
 
 Bir sonraki oturum şunları bilir (hepsi commit/push edildi):
