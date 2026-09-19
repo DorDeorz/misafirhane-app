@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
     QHeaderView, QGroupBox, QCheckBox, QTextEdit, QDialog, QDialogButtonBox,
     QFileDialog, QScrollArea, QSplitter, QGridLayout, QFrame, QAbstractItemView
 )
-from PySide6.QtCore import Qt, QDate
+from PySide6.QtCore import Qt, QDate, QTimer
 from PySide6.QtGui import QColor, QIcon
 
 import database
@@ -305,12 +305,14 @@ class GunlukGirisTab(QWidget):
         layout.addLayout(ust)
 
         self.tablo = QTableWidget()
-        self.tablo.setColumnCount(8)
+        self.tablo.setColumnCount(9)
         self.tablo.setHorizontalHeaderLabels([
-            "Oda", "Ad Soyad", "Telefon", "Kişi", "Gece", "Fiyat Tipi", "Toplam Tutar", "Durum"
+            "Oda", "Ad Soyad", "Telefon", "Kişi", "Gece", "Fiyat Tipi",
+            "Toplam Tutar", "Oda Durumları", "Durum"
         ])
         self.tablo.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.tablo.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.tablo.setWordWrap(True)
         self.tablo.cellDoubleClicked.connect(self._hucre_cift_tiklandi)
         tabloyu_kompakt_yap(self.tablo)
         self.tablo.setToolTip("Bir satıra çift tıklayarak rezervasyon detayına ulaşabilirsin.")
@@ -320,18 +322,47 @@ class GunlukGirisTab(QWidget):
 
     def yenile(self):
         tarih_str = qdate_to_str(self.tarih_sec.date())
-        rows = repository.gunun_girisleri(tarih_str)
+        oda_satirlari = repository.gunun_girisleri(tarih_str)
         bugun = date.today().isoformat()
+
+        # Oda satırlarını rezervasyon bazında grupla: çok odalı rezervasyon TEK satır
+        gruplar = {}
+        for s in oda_satirlari:
+            gruplar.setdefault(s["rez_id"], []).append(s)
+
         self.tablo.setRowCount(0)
-        for r in rows:
+        for rez_id, satirlar in gruplar.items():
             row_idx = self.tablo.rowCount()
             self.tablo.insertRow(row_idx)
-            toplam = repository.rezervasyon_gecelik_toplami(r) * (r["gece_sayisi"] or 1)
 
-            if r["checkin_yapildi"]:
+            oda_metni = " + ".join(f"{s['kat_adi']} - Oda {s['oda_no']}" for s in satirlar)
+            kisi_metni = " + ".join(str(s["kisi_sayisi"]) for s in satirlar)
+            gece_metni = " + ".join(str(s["gece_sayisi"]) for s in satirlar)
+            fiyat_birimleri = sorted({fiyat_tipi_goster(s["fiyat_tipi"]) for s in satirlar})
+            fiyat_metni = " + ".join(fiyat_birimleri) if fiyat_birimleri else "-"
+            toplam = sum(
+                repository.odasi_gecelik_toplami(s) * (s["gece_sayisi"] or 1)
+                for s in satirlar
+            )
+
+            oda_durumlari = []
+            for s in satirlar:
+                if s["checkin_yapildi"]:
+                    oda_durumlari.append(f"{s['oda_no']}: ✓ Geldi")
+                elif s["giris_tarihi"] < bugun:
+                    oda_durumlari.append(f"{s['oda_no']}: ⚠ Gelmedi")
+                else:
+                    oda_durumlari.append(f"{s['oda_no']}: ⏳ Bekleniyor")
+            oda_durum_metni = "  ·  ".join(oda_durumlari)
+
+            gelen = sum(1 for s in satirlar if s["checkin_yapildi"])
+            if gelen == len(satirlar):
                 durum_metni = "✓ Geldi"
                 renk = QColor("#c8f7c5")
-            elif repository.gelmedi_mi(r, bugun):
+            elif gelen > 0:
+                durum_metni = f"Kısmen Geldi ({gelen}/{len(satirlar)})"
+                renk = QColor("#fff3cd")
+            elif all(s["giris_tarihi"] < bugun for s in satirlar):
                 durum_metni = "⚠ Gelmedi (No-Show)"
                 renk = QColor("#f8d0d0")
             else:
@@ -339,19 +370,14 @@ class GunlukGirisTab(QWidget):
                 renk = QColor("#fff3cd")
 
             degerler = [
-                str(r["oda_no"]),
-                r["ad_soyad"],
-                r["telefon"] or "",
-                str(r["kisi_sayisi"]),
-                str(r["gece_sayisi"]),
-                fiyat_tipi_goster(r["fiyat_tipi"]),
-                f"{toplam} TL",
-                durum_metni,
+                oda_metni, satirlar[0]["ad_soyad"], satirlar[0]["telefon"] or "",
+                kisi_metni, gece_metni, fiyat_metni, f"{toplam} TL",
+                oda_durum_metni, durum_metni,
             ]
             for col, val in enumerate(degerler):
                 item = QTableWidgetItem(val)
-                item.setData(Qt.UserRole, r["id"])
-                if col == 7:
+                item.setData(Qt.UserRole, rez_id)
+                if col == 8:
                     tema.renklendir(item, renk)
                 self.tablo.setItem(row_idx, col, item)
 
@@ -453,17 +479,17 @@ class CheckinTab(QWidget):
             islem_widget = QWidget()
             islem_layout = QHBoxLayout(islem_widget)
             islem_layout.setContentsMargins(2, 2, 2, 2)
-            if r["rez_id"] is not None:
+            if r["ro_id"] is not None:
                 if r["checkin_yapildi"]:
                     btn = QPushButton("Misafirleri Düzenle")
                 else:
                     btn = QPushButton("✅ Check-in Yap")
-                btn.clicked.connect(lambda checked, rid=r["rez_id"]: self._checkin_ac(rid))
+                btn.clicked.connect(lambda checked, rid=r["ro_id"]: self._checkin_ac(rid))
                 islem_layout.addWidget(btn)
             self.tablo.setCellWidget(row_idx, 6, islem_widget)
 
-    def _checkin_ac(self, rez_id):
-        dialog = CheckinDialog(rez_id, self)
+    def _checkin_ac(self, ro_id):
+        dialog = CheckinDialog(ro_id, self)
         dialog.exec()
         if dialog.kaydedildi:
             self.yenile()
@@ -870,36 +896,24 @@ class YeniRezervasyonTab(QWidget):
                 if cevap == QMessageBox.No:
                     return
 
-        grup_id = repository.yeni_grup_id() if len(secilenler) > 1 else None
-
         ad_soyad = self.ad_soyad.text().strip()
         telefon = self.telefon.text().strip()
         referans = self.referans.text().strip()
         notlar = self.notlar.text().strip()
+        odalar = [
+            dict(
+                oda_id=s["oda_id"], giris_tarihi=s["giris"], gece_sayisi=s["gece"],
+                kisi_sayisi=s["kisi"], fiyat_tipi=s["fiyat_tipi"],
+                ozel_ucret=s.get("ozel_ucret"),
+            )
+            for s in secilenler
+        ]
         try:
-            if len(secilenler) == 1:
-                s = secilenler[0]
-                repository.rezervasyon_olustur(
-                    oda_id=s["oda_id"], ad_soyad=ad_soyad, tc_no="",
-                    telefon=telefon, kisi_sayisi=s["kisi"],
-                    giris_tarihi=s["giris"], gece_sayisi=s["gece"],
-                    fiyat_tipi=s["fiyat_tipi"], referans=referans,
-                    notlar=notlar, grup_id=grup_id,
-                    olusturan_kullanici=self.olusturan_kullanici,
-                    ozel_ucret=s.get("ozel_ucret"),
-                )
-            else:
-                toplu = [
-                    dict(oda_id=s["oda_id"], ad_soyad=ad_soyad, tc_no="",
-                         telefon=telefon, kisi_sayisi=s["kisi"],
-                         giris_tarihi=s["giris"], gece_sayisi=s["gece"],
-                         fiyat_tipi=s["fiyat_tipi"], referans=referans,
-                         notlar=notlar, grup_id=grup_id,
-                         olusturan_kullanici=self.olusturan_kullanici,
-                         ozel_ucret=s.get("ozel_ucret"))
-                    for s in secilenler
-                ]
-                repository.rezervasyonlari_toplu_olustur(toplu)
+            repository.rezervasyon_olustur(
+                odalar, ad_soyad=ad_soyad, tc_no="", telefon=telefon,
+                referans=referans, notlar=notlar,
+                olusturan_kullanici=self.olusturan_kullanici,
+            )
         except ValueError as e:
             QMessageBox.warning(self, "Hata", str(e))
             return
@@ -928,17 +942,18 @@ class OdaDegistirDialog(QDialog):
     gösterir. Renkler: yeşil = seçilen aralıkta boş, kırmızı = aralıkta
     rezervasyonlu, gri = kullanılamaz (temizlikte/arızalı)."""
 
-    def __init__(self, rez_row, parent=None):
+    def __init__(self, ro_row, parent=None):
         super().__init__(parent)
-        self.rez_row = rez_row
-        self.setWindowTitle(f"Oda Değiştir - {rez_row['ad_soyad']}")
+        self.ro_row = ro_row
+        self.setWindowTitle(f"Oda Değiştir - {ro_row['ad_soyad']}")
         self.setMinimumWidth(760)
 
         layout = QVBoxLayout(self)
 
+        top_oda = f"{ro_row['kat_adi']} - Oda {ro_row['oda_no']}"
         bilgi = QLabel(
-            f"<b>{rez_row['ad_soyad']}</b> şu an <b>{rez_row['kat_adi']} - Oda {rez_row['oda_no']}</b>'de kalıyor.\n"
-            f"Giriş: {rez_row['giris_tarihi']}  |  {rez_row['gece_sayisi']} gece\n\n"
+            f"<b>{ro_row['ad_soyad']}</b> şu an <b>{top_oda}</b>'de kalıyor.\n"
+            f"Giriş: {ro_row['giris_tarihi']}  |  {ro_row['gece_sayisi']} gece\n\n"
             f"Tablodan yeni odayı seç. Yeşil satırlar bu aralıkta boş odalar."
         )
         bilgi.setWordWrap(True)
@@ -947,7 +962,7 @@ class OdaDegistirDialog(QDialog):
         ust = QHBoxLayout()
 
         form = QFormLayout()
-        self.degisim_tarihi = QDateEdit(str_to_qdate(rez_row["giris_tarihi"]))
+        self.degisim_tarihi = QDateEdit(str_to_qdate(ro_row["giris_tarihi"]))
         self.degisim_tarihi.setCalendarPopup(True)
         self.degisim_tarihi.dateChanged.connect(lambda *_: self._tabloyu_guncelle())
         form.addRow("Değişim Tarihi:", self.degisim_tarihi)
@@ -1008,9 +1023,9 @@ class OdaDegistirDialog(QDialog):
 
     def _etkin_aralik(self):
         cikis = repository.cikis_tarihi_hesapla(
-            self.rez_row["giris_tarihi"], self.rez_row["gece_sayisi"]
+            self.ro_row["giris_tarihi"], self.ro_row["gece_sayisi"]
         )
-        baslangic = max(self.rez_row["giris_tarihi"], self.secilen_tarih())
+        baslangic = max(self.ro_row["giris_tarihi"], self.secilen_tarih())
         gun = (datetime.strptime(cikis, "%Y-%m-%d")
                - datetime.strptime(baslangic, "%Y-%m-%d")).days
         return baslangic, gun, cikis
@@ -1029,10 +1044,14 @@ class OdaDegistirDialog(QDialog):
         ilk_uygun = None
         satir = 0
         for oda in repository.oda_listesi():
-            if oda["id"] == self.rez_row["oda_id"]:
+            if oda["id"] == self.ro_row["oda_id"]:
                 continue
             if gun > 0:
-                cakisma = repository.musaitlik_kontrol(oda["id"], baslangic, gun)
+                cakisma = repository.musaitlik_kontrol(
+                    oda["id"], baslangic, gun,
+                    haric_rez_id=self.ro_row["rezervasyon_id"],
+                    haric_ro_id=self.ro_row["id"],
+                )
             else:
                 cakisma = []
 
@@ -1125,7 +1144,8 @@ class RezervasyonYonetimiTab(QWidget):
         ust.addWidget(QLabel("Göster:"))
         self.durum_filtre = QComboBox()
         self.durum_filtre.addItems([
-            "Aktif Rezervasyonlar", "Gelmeyenler (No-Show)", "İptal Edilenler", "Hepsi"
+            "Aktif Rezervasyonlar", "Gelmeyenler (No-Show)",
+            "Geçmiş Kayıtlar (Çıkış Yapılmış)", "İptal Edilenler", "Hepsi"
         ])
         self.durum_filtre.currentIndexChanged.connect(self.yenile)
         ust.addWidget(self.durum_filtre)
@@ -1156,8 +1176,12 @@ class RezervasyonYonetimiTab(QWidget):
         arama_satiri = QHBoxLayout()
         arama_satiri.addWidget(QLabel("🔍 Bul:"))
         self.arama_kutusu = QLineEdit()
-        self.arama_kutusu.setPlaceholderText("İsim, telefon, TC, oda no, referans... yazınca anında filtreler")
-        self.arama_kutusu.textChanged.connect(self.yenile)
+        self.arama_kutusu.setPlaceholderText("Ad Soyad ile ara... yazınca anında filtreler")
+        self._arama_zamanlayici = QTimer(self)
+        self._arama_zamanlayici.setSingleShot(True)
+        self._arama_zamanlayici.setInterval(250)
+        self._arama_zamanlayici.timeout.connect(self.yenile)
+        self.arama_kutusu.textChanged.connect(lambda: self._arama_zamanlayici.start())
         arama_satiri.addWidget(self.arama_kutusu)
         temizle_btn = QPushButton("✕")
         temizle_btn.setMaximumWidth(30)
@@ -1177,7 +1201,7 @@ class RezervasyonYonetimiTab(QWidget):
         self.tablo.setColumnCount(14)
         self.tablo.setHorizontalHeaderLabels([
             "ID", "Oda", "Ad Soyad", "Telefon", "Kişi", "Giriş", "Gece", "Çıkış",
-            "Fiyat Tipi", "Referans", "Grup", "Alan Kullanıcı", "Durum", "İşlemler"
+            "Fiyat Tipi", "Referans", "Oda Sayısı", "Alan Kullanıcı", "Durum", "İşlemler"
         ])
         self.tablo.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
         self.tablo.horizontalHeader().setStretchLastSection(True)
@@ -1201,26 +1225,22 @@ class RezervasyonYonetimiTab(QWidget):
             return "iptal"
         elif secim == "Gelmeyenler (No-Show)":
             return "gelmedi"
+        elif secim == "Geçmiş Kayıtlar (Çıkış Yapılmış)":
+            return "gecmis"
         return "hepsi"
 
     def _satirlari_getir(self, limit=None):
         durum = self._durum_kodu()
         if durum == "gelmedi":
-            rows = repository.rezervasyon_listesi("aktif")
-            rows = [r for r in rows if repository.gelmedi_mi(r)]
+            # En az bir odası no-show (gelmedi) olanlar
+            rows = [r for r in repository.rezervasyon_listesi("aktif")
+                    if (r["gelmedi_odasi"] or 0) > 0]
         else:
             rows = repository.rezervasyon_listesi(durum)
 
         arama = self.arama_kutusu.text().strip().lower()
         if arama:
-            def eslesiyor_mu(r):
-                alanlar = [
-                    r["ad_soyad"] or "", r["telefon"] or "", r["tc_no"] or "",
-                    str(r["oda_no"]), r["kat_adi"] or "", r["referans"] or "",
-                    r["olusturan_kullanici"] or "",
-                ]
-                return any(arama in (str(a).lower()) for a in alanlar)
-            rows = [r for r in rows if eslesiyor_mu(r)]
+            rows = [r for r in rows if arama in (r["ad_soyad"] or "").lower()]
 
         sirala = self.sirala_combo.currentText()
         if sirala.startswith("Giriş Tarihi"):
@@ -1246,73 +1266,74 @@ class RezervasyonYonetimiTab(QWidget):
     def yenile(self):
         rows = self._satirlari_getir(limit=self._secili_limit())
         rows = list(rows)
-        self.tablo.setRowCount(0)
-        bugun = date.today().isoformat()
+        ozet = repository.rezervasyonlari_toplam_ozeti([r["id"] for r in rows]) if rows else {}
         gelmedi_sayisi = 0
 
-        for r in rows:
-            row_idx = self.tablo.rowCount()
-            self.tablo.insertRow(row_idx)
-            cikis = repository.cikis_tarihi_hesapla(r["giris_tarihi"], r["gece_sayisi"])
-            grup_kisa = r["grup_id"][:8] if r["grup_id"] else ""
-            gelmedi = repository.gelmedi_mi(r, bugun)
-            if gelmedi:
-                gelmedi_sayisi += 1
+        self.tablo.setUpdatesEnabled(False)
+        try:
+            self.tablo.setRowCount(len(rows))
+            for row_idx, r in enumerate(rows):
+                o = ozet.get(r["id"]) or {}
+                fiyat_birimleri = sorted({fiyat_tipi_goster(t) for t in o.get("fiyat_tipleri", set())})
+                fiyat_metni = " + ".join(fiyat_birimleri) if fiyat_birimleri else "-"
 
-            if r["iptal"]:
-                durum_metni = "İptal Edildi"
-            elif gelmedi:
-                durum_metni = "⚠ Gelmedi (No-Show)"
-            elif r["checkin_yapildi"]:
-                durum_metni = "✓ Check-in Yapıldı"
-            elif r["giris_tarihi"] <= bugun:
-                durum_metni = "Bekleniyor"
-            else:
-                durum_metni = "Aktif (İleri Tarih)"
+                gelmedi = (r["gelmedi_odasi"] or 0) > 0 and not r["iptal"]
+                if gelmedi:
+                    gelmedi_sayisi += 1
 
-            degerler = [
-                str(r["id"]), f"{r['kat_adi']} - {r['oda_no']}", r["ad_soyad"],
-                r["telefon"] or "", str(r["kisi_sayisi"]), r["giris_tarihi"],
-                str(r["gece_sayisi"]), cikis, fiyat_tipi_goster(r["fiyat_tipi"]), r["referans"] or "",
-                grup_kisa, r["olusturan_kullanici"] or "", durum_metni,
-            ]
-            for col, val in enumerate(degerler):
-                item = QTableWidgetItem(val)
-                item.setData(Qt.UserRole, r["id"])
-                if r["iptal"]:
-                    tema.renklendir(item, "#f0f0f0", yazi="#888888")
-                elif gelmedi:
-                    tema.renklendir(item, "#f8d0d0")
-                self.tablo.setItem(row_idx, col, item)
+                degerler = [
+                    str(r["id"]), r["oda_ozeti"] or "-", r["ad_soyad"],
+                    r["telefon"] or "", str(r["toplam_kisi"]), r["giris_tarihi"],
+                    str(r["toplam_gece"]), r["cikis_tarihi"] or "", fiyat_metni,
+                    r["referans"] or "", f"{r['oda_sayisi']} oda",
+                    r["olusturan_kullanici"] or "", r["durum_etiket"] or "",
+                ]
+                for col, val in enumerate(degerler):
+                    item = QTableWidgetItem(val)
+                    item.setData(Qt.UserRole, r["id"])
+                    if r["iptal"]:
+                        tema.renklendir(item, "#f0f0f0", yazi="#888888")
+                    elif gelmedi:
+                        tema.renklendir(item, "#f8d0d0")
+                    self.tablo.setItem(row_idx, col, item)
 
-            # İşlem butonları
-            islem_widget = QWidget()
-            islem_layout = QHBoxLayout(islem_widget)
-            islem_layout.setContentsMargins(2, 2, 2, 2)
+                # Kalabalık listelerde widget maliyetini düşürmek için işlem
+                # butonları yalnızca makul boyuttaki listelerde çizilir.
+                if len(rows) <= 250:
+                    islem_widget = QWidget()
+                    islem_layout = QHBoxLayout(islem_widget)
+                    islem_layout.setContentsMargins(2, 2, 2, 2)
 
-            if not r["iptal"]:
-                degistir_btn = QPushButton("Oda Değiştir")
-                degistir_btn.clicked.connect(lambda checked, rid=r["id"]: self.oda_degistir(rid))
-                islem_layout.addWidget(degistir_btn)
+                    if not r["iptal"]:
+                        degistir_btn = QPushButton("Oda Değiştir")
+                        degistir_btn.clicked.connect(lambda checked, rid=r["id"]: self.oda_degistir(rid))
+                        islem_layout.addWidget(degistir_btn)
 
-                iptal_btn = QPushButton("İptal Et")
-                iptal_btn.setStyleSheet("color: #c0392b;")
-                iptal_btn.clicked.connect(lambda checked, rid=r["id"]: self.iptal_et(rid))
-                islem_layout.addWidget(iptal_btn)
-            else:
-                geri_btn = QPushButton("İptali Geri Al")
-                geri_btn.clicked.connect(lambda checked, rid=r["id"]: self.iptal_geri_al(rid))
-                islem_layout.addWidget(geri_btn)
+                        iptal_btn = QPushButton("İptal Et")
+                        iptal_btn.setStyleSheet("color: #c0392b;")
+                        iptal_btn.clicked.connect(lambda checked, rid=r["id"]: self.iptal_et(rid))
+                        islem_layout.addWidget(iptal_btn)
+                    else:
+                        geri_btn = QPushButton("İptali Geri Al")
+                        geri_btn.clicked.connect(lambda checked, rid=r["id"]: self.iptal_geri_al(rid))
+                        islem_layout.addWidget(geri_btn)
 
-            self.tablo.setCellWidget(row_idx, 13, islem_widget)
+                    self.tablo.setCellWidget(row_idx, 13, islem_widget)
 
-        self.tablo.resizeColumnsToContents()
-        self.tablo.setColumnWidth(13, 210)
-        self.ozet_label.setText(f"Toplam {len(rows)} kayıt gösteriliyor  |  Gelmeyen (No-Show): {gelmedi_sayisi}")
+            if len(rows) <= 250:
+                self.tablo.resizeColumnsToContents()
+                self.tablo.setColumnWidth(13, 210)
+        finally:
+            self.tablo.setUpdatesEnabled(True)
+
+        ek = ""
+        if len(rows) > 250:
+            ek = "  |  250+ kayıtta İşlem butonları gizli — çift tıklayıp detaydan yönet."
+        self.ozet_label.setText(
+            f"Toplam {len(rows)} kayıt gösteriliyor  |  Gelmeyen (No-Show): {gelmedi_sayisi}{ek}"
+        )
 
     def _hucre_cift_tiklandi(self, row, col):
-        if col == 13:
-            return  # islemler sutunu, zaten butonlar var
         item = self.tablo.item(row, 0)
         if item is None:
             return
@@ -1345,38 +1366,28 @@ class RezervasyonYonetimiTab(QWidget):
             self.yenile_callback()
 
     def oda_degistir(self, rez_id):
-        rez = repository.rezervasyon_getir(rez_id)
-        if not rez:
+        odalar = repository.rezervasyon_odalar_listele(rez_id)
+        if not odalar:
             return
-        dialog = OdaDegistirDialog(rez, self)
-        if dialog.exec() == QDialog.Accepted:
-            yeni_oda_id = dialog.secilen_oda_id()
-            degisim_tarihi = dialog.secilen_tarih()
-
-            # Yeni odada gercekten dolacak tarih araligini hesapla:
-            # (degisim tarihi giristen once ise, tam rezervasyon araligi kullanilir)
-            cikis_tarihi = repository.cikis_tarihi_hesapla(rez["giris_tarihi"], rez["gece_sayisi"])
-            etkin_baslangic = max(rez["giris_tarihi"], degisim_tarihi)
-            etkin_gece = (datetime.strptime(cikis_tarihi, "%Y-%m-%d")
-                          - datetime.strptime(etkin_baslangic, "%Y-%m-%d")).days
-
-            if etkin_gece <= 0:
-                QMessageBox.warning(self, "Geçersiz Tarih", "Bu rezervasyonun zaten çıkışı yapılmış.")
+        if len(odalar) > 1:
+            secenekler = [
+                f"{o['kat_adi']} - Oda {o['oda_no']}  ({o['giris_tarihi']} · {o['gece_sayisi']} gece · {o['kisi_sayisi']} kişi)"
+                for o in odalar
+            ]
+            secim, ok = QInputDialog.getItem(
+                self, "Oda Değiştir", "Hangi oda satırı yeni odaya taşınacak?",
+                secenekler, 0, False
+            )
+            if not ok:
                 return
+            ro = odalar[secenekler.index(secim)]
+        else:
+            ro = odalar[0]
 
-            cakisma = repository.musaitlik_kontrol(yeni_oda_id, etkin_baslangic, etkin_gece)
-            if cakisma:
-                isimler = ", ".join([c["ad_soyad"] for c in cakisma])
-                cevap = QMessageBox.question(
-                    self, "Yeni Oda Dolu Olabilir",
-                    f"Seçtiğin yeni odada bu tarihlerde başka rezervasyon var: {isimler}.\n"
-                    f"Yine de devam etmek istiyor musun?",
-                    QMessageBox.Yes | QMessageBox.No
-                )
-                if cevap == QMessageBox.No:
-                    return
+        dialog = OdaDegistirDialog(ro, self)
+        if dialog.exec() == QDialog.Accepted:
             try:
-                repository.oda_degistir(rez_id, yeni_oda_id, degisim_tarihi)
+                repository.oda_degistir(ro["id"], dialog.secilen_oda_id(), dialog.secilen_tarih())
                 QMessageBox.information(self, "Başarılı", "Oda değişikliği tamamlandı.")
             except ValueError as e:
                 QMessageBox.warning(self, "Hata", str(e))
@@ -1864,7 +1875,7 @@ class CikisTab(QWidget):
             self.tablo.setCellWidget(row_idx, 5, islem_widget)
         self.ozet_label.setText(f"Çıkış yapacak misafir: {len(rows)}")
 
-    def cikis_yap(self, rez_id):
+    def cikis_yap(self, ro_id):
         cevap = QMessageBox.question(
             self, "Çıkış İşlemi",
             "Misafir çıkış yaptı mı? İşlem sonrası oda 'temizlikte' durumuna alınır.",
@@ -1873,7 +1884,7 @@ class CikisTab(QWidget):
         if cevap != QMessageBox.Yes:
             return
         try:
-            repository.cikis_yap(rez_id)
+            repository.odasi_cikis_yap(ro_id)
         except ValueError as e:
             QMessageBox.warning(self, "Çıkış Yapılamadı", str(e))
             return

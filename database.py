@@ -79,56 +79,72 @@ def init_db():
             )
         """)
 
+        # Rezervasyon basina TEK satir: bir rezervasyon birden fazla odaya
+        # (rezervasyon_odalar) yayilabilir. Oda/kisi/giris bilgileri burada degil.
         cur.execute("""
             CREATE TABLE IF NOT EXISTS rezervasyonlar (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                oda_id INTEGER NOT NULL,
                 ad_soyad TEXT NOT NULL,
                 tc_no TEXT,
                 telefon TEXT,
-                kisi_sayisi INTEGER DEFAULT 1,
-                giris_tarihi TEXT NOT NULL,
-                gece_sayisi INTEGER NOT NULL DEFAULT 1,
-                fiyat_tipi TEXT DEFAULT 'Sabit',
-                gecelik_ucret INTEGER DEFAULT 1300,
                 referans TEXT,
-                notlar TEXT,
-                grup_id TEXT,
-                checkin_yapildi INTEGER DEFAULT 0,
+                notlar TEXT DEFAULT '',
                 olusturan_kullanici TEXT,
                 iptal INTEGER DEFAULT 0,
-                olusturma_tarihi TEXT DEFAULT CURRENT_TIMESTAMP,
+                olusturma_tarihi TEXT DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        # Bir rezervasyondaki her oda icin ayri satir. Oda bazli giris/cikis,
+        # kisi, fiyat ve check-in burada tutulur. Ayni oda bir rezervasyonda
+        # yalnizca bir kez gecebilir (oda degisikliginde ayni rezervasyona
+        # SECOND bir satir eklenmez; eski satir yeni odaya tasinir / bolunur).
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS rezervasyon_odalar (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                rezervasyon_id INTEGER NOT NULL,
+                oda_id INTEGER NOT NULL,
+                giris_tarihi TEXT NOT NULL,
+                gece_sayisi INTEGER NOT NULL DEFAULT 1,
                 cikis_tarihi TEXT,
+                kisi_sayisi INTEGER NOT NULL DEFAULT 1,
+                fiyat_tipi TEXT DEFAULT 'Sabit',
+                gecelik_ucret INTEGER DEFAULT 1300,
+                checkin_yapildi INTEGER DEFAULT 0,
+                FOREIGN KEY (rezervasyon_id) REFERENCES rezervasyonlar(id),
                 FOREIGN KEY (oda_id) REFERENCES odalar(id)
             )
         """)
+        cur.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uk_rez_oda "
+            "ON rezervasyon_odalar (rezervasyon_id, oda_id)"
+        )
 
-        # Her gece icin ayri odeme kaydi (defterdeki + isareti mantigi)
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS odemeler (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                rezervasyon_id INTEGER NOT NULL,
-                tarih TEXT NOT NULL,
-                tutar INTEGER NOT NULL,
-                odendi INTEGER DEFAULT 0,
-                odeme_sekli TEXT,
-                odeme_notu TEXT,
-                FOREIGN KEY (rezervasyon_id) REFERENCES rezervasyonlar(id)
-            )
-        """)
-
-        # Odada kalan kisilerin teker teker listesi (check-in ekraninda doldurulur).
-        # fiyat_tipi/gecelik_ucret: kisi bazinda farkli fiyat (Sabit/Uye/Ozel) tutmak icin.
+        # Oda bazli check-in ile doldurulan kisi listesi (her misafirin fiyati).
         cur.execute("""
             CREATE TABLE IF NOT EXISTS misafirler (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                rezervasyon_id INTEGER NOT NULL,
+                rezervasyon_oda_id INTEGER NOT NULL,
                 ad_soyad TEXT,
                 tc_no TEXT,
                 sira_no INTEGER DEFAULT 1,
                 fiyat_tipi TEXT,
                 gecelik_ucret INTEGER,
-                FOREIGN KEY (rezervasyon_id) REFERENCES rezervasyonlar(id)
+                FOREIGN KEY (rezervasyon_oda_id) REFERENCES rezervasyon_odalar(id)
+            )
+        """)
+
+        # Her gece icin oda bazli ayri odeme kaydi (defterdeki + isareti mantigi)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS odemeler (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                rezervasyon_oda_id INTEGER NOT NULL,
+                tarih TEXT NOT NULL,
+                tutar INTEGER NOT NULL,
+                odendi INTEGER DEFAULT 0,
+                odeme_sekli TEXT,
+                odeme_notu TEXT,
+                FOREIGN KEY (rezervasyon_oda_id) REFERENCES rezervasyon_odalar(id)
             )
         """)
 
@@ -168,24 +184,16 @@ def init_db():
             )
         """)
 
-        # ---- ESKI VERITABANI MIGRASYONU -------------------------------
-        # Mevcut misafirhane.db dosyasinda yoksa yeni kolonlari ekle.
-        _oda_kolonlari = [r[1] for r in cur.execute("PRAGMA table_info(odalar)").fetchall()]
-        if "durum" not in _oda_kolonlari:
-            cur.execute("ALTER TABLE odalar ADD COLUMN durum TEXT DEFAULT 'temiz'")
-        if "ariza_bitis" not in _oda_kolonlari:
-            cur.execute("ALTER TABLE odalar ADD COLUMN ariza_bitis TEXT")
-
+        # Eskiden olusturulmus (tek odali model) veritabani geri yüklenmişse
+        # hizli bir sekilde fark edip net bir hata mesaji verelim ki bilinçsizce
+        # yeni model uzerinde bozuk veri calismasin.
         _rez_kolonlari = [r[1] for r in cur.execute("PRAGMA table_info(rezervasyonlar)").fetchall()]
-        if "cikis_tarihi" not in _rez_kolonlari:
-            cur.execute("ALTER TABLE rezervasyonlar ADD COLUMN cikis_tarihi TEXT")
-        # misafirler tablosuna kisi bazli fiyat kolonlari (yoksa ekle)
-        _mis_kolonlari = [r[1] for r in cur.execute("PRAGMA table_info(misafirler)").fetchall()]
-        if "fiyat_tipi" not in _mis_kolonlari:
-            cur.execute("ALTER TABLE misafirler ADD COLUMN fiyat_tipi TEXT")
-        if "gecelik_ucret" not in _mis_kolonlari:
-            cur.execute("ALTER TABLE misafirler ADD COLUMN gecelik_ucret INTEGER")
-        # ---- MIGRASYON BITIS ------------------------------------------
+        if _rez_kolonlari and "oda_id" in _rez_kolonlari:
+            raise RuntimeError(
+                "Bu veritabani eski (tek odali) modele ait. Yeni model "
+                "misafirhane.db olusturulmadan once mevcut dosya silinmelidir. "
+                "Yedeginiz korunur; geri yuklemek isterseniz yedek dosyasini acmayin."
+            )
 
         conn.commit()
     except Exception:

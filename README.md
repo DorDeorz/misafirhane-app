@@ -7,7 +7,8 @@ Küçük işletmeler ve misafirhaneler için **internetsiz çalışan** masaüst
 ## Ne yapar?
 
 - **Oda Durumu** — günün check-in/check-out listesi, oda durumları (temiz / temizlikte / arızalı)
-- **Rezervasyon** — misafir ekleme/düzenleme, kişi başı fiyat tipleri (Sabit / Üye / Özel), ekstra yatak
+- **Rezervasyon** — çok odalı rezervasyon (tek kayıtta birden çok oda), misafir ekleme/düzenleme, kişi başı fiyat tipleri (Sabit / Üye / Özel), ekstra yatak
+- **Geçmiş Kayıtlar** — çıkışı yapılmış eski misafirlerin kayıtlarını isimle arayıp bulma
 - **Check-in / Check-out** — odadaki kişileri yönetme, gecelik ücret hesaplama
 - **Takvim Görünümü** — odaların günlük doluluk tablosu
 - **Raporlar & Excel** — günlük durum, rezervasyonlar ve tarih aralığı raporlarını `.xlsx` olarak dışa aktarma
@@ -65,5 +66,9 @@ kurulum.iss            Inno Setup kurulum betiği
 
 | Sürüm | Not |
 |-------|-----|
+| 1.0.3 | Çok odalı rezervasyon (tek kayıtta birden çok oda, oda satırı bazlı check-in/çıkış/oda değiştirme); **Geçmiş Kayıtlar** görünümü (çıkışı yapılmış eski misafirler, arama/sıralama/Excel); Günün Girişleri'nde çok odalı rezervasyon tek satır + oda bazlı Geldi/Gelmedi/Bekleniyor durumu; performans (arama yalnızca Ad Soyad'da anında filtrelenir, gecikmeli yenileme + toplu sorgular — büyük listelerde kasma yok); düzeltmeler: Oda Değiştir / Tarih Değiştir pencerelerinin açılmama hatası, iptal listesinde satır renklendirme çökmesi |
+| 1.0.2.2 | Hata düzeltmesi: oda değiştirme sonrası giriş tarihi değiştirilince aynı gece iki odada görünme sorunu; oda parçaları (önceki/devam) artık tarih değişikliğinde otomatik dengelenir, ödemeler yeniden kurulur |
+| 1.0.2.1 | Hata düzeltmesi: takvim ipuçlarında (referans bilgisi) açılış hatası |
+| 1.0.2 | Oda Değiştir ekranı tablo haline getirildi (renk kodlu müsaitlik); takvimde ad yalnızca giriş gününe yazılır, diğer geceler X olur |
 | 1.0.1 | Ayarlar sekmesine sürüm bilgisi eklendi; güncelleme altyapısı |
 | 1.0.0 | İlk yayın sürümü |

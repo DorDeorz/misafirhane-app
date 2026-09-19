@@ -5,7 +5,7 @@
 Her sürümde SURUM arttirilir; guncelleme aracı ve kurulum paketi bu değeri kullanır."""
 
 UYGULAMA_ADI = "Misafirhane Rezervasyon"
-SURUM = "1.0.2.2"
+SURUM = "1.0.3"
 
 YENILIKLER = {
     "1.0.0": "İlk yayın sürümü. Rezervasyon, oda durumu, takvim, rapor ve yedekleme.",
@@ -17,6 +17,15 @@ YENILIKLER = {
                 "hatası giderildi.",
     "1.0.2.2": "Oda değiştirme sonrası giriş tarihi değiştirilince aynı gece iki odada "
                 "görünme hatası düzeltildi — oda-parçaları artık otomatik dengelenir.",
+    "1.0.3": "Çok odalı rezervasyon: tek rezervasyon birden çok odayı kapsar "
+             "(Yeni Rezervasyon, detay ekranı, oda değiştirme ve check-in/çıkış oda "
+             "satırı bazlı). Geçmiş Kayıtlar: çıkış yapılmış eski misafirlerin "
+             "aranabilir görünümü. Günün Girişleri: çok odalı rezervasyon tek satırda, "
+             "her oda için Geldi / Gelmedi / Bekleniyor durumu ayrıca gösterilir. "
+             "Performans: arama yalnızca Ad Soyad'da anında filtreler (gecikmeli "
+             "yenileme + toplu sorgular ile büyük listelerde kasma giderildi). "
+             "Düzeltmeler: Oda Değiştir / Tarih Değiştir pencerelerinin açılmama "
+             "hatası, iptal listesinde satır renklendirme çökmesi.",
 }
 
 

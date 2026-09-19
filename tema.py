@@ -114,7 +114,11 @@ def hucre_yazi_rengi(arka_plan):
 def renklendir(item, arka_plan, yazi=None):
     """QTableWidget hücresine arka plan koyar; yazı rengi otomatik (okunurluk garantili)."""
     item.setBackground(arka_plan if isinstance(arka_plan, QColor) else QColor(arka_plan))
-    item.setForeground(yazi if yazi is not None else hucre_yazi_rengi(arka_plan))
+    if yazi is None:
+        yazi = hucre_yazi_rengi(arka_plan)
+    elif not isinstance(yazi, QColor):
+        yazi = QColor(yazi)
+    item.setForeground(yazi)
 
 
 # ============================================================

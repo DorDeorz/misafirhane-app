@@ -32,36 +32,32 @@ def rezervasyonlari_disa_aktar(dosya_yolu, durum="aktif", satirlar=None):
     ws.title = "Rezervasyonlar"
 
     basliklar = [
-        "ID", "Kat", "Oda No", "Ad Soyad", "TC No", "Telefon", "Kişi Sayısı",
-        "Giriş Tarihi", "Gece Sayısı", "Çıkış Tarihi", "Fiyat Tipi",
-        "Gecelik Ücret", "Toplam Tutar", "Referans", "Grup", "Alan Kullanıcı",
+        "ID", "Oda", "Ad Soyad", "TC No", "Telefon", "Kişi Sayısı",
+        "Giriş Tarihi", "Toplam Gece", "Çıkış Tarihi", "Fiyat Tipi",
+        "Toplam Tutar (TL)", "Referans", "Oda Sayısı", "Alan Kullanıcı",
         "Alınma Tarihi", "Durum", "Notlar"
     ]
     _baslik_satiri_yaz(ws, basliklar)
 
     rows = satirlar if satirlar is not None else repository.rezervasyon_listesi(durum)
+    if satirlar is None and durum == "gelmedi":
+        rows = [r for r in rows if (r["gelmedi_odasi"] or 0) > 0]
+    ozet = repository.rezervasyonlari_toplam_ozeti([r["id"] for r in rows]) if rows else {}
     for r in rows:
-        cikis = repository.cikis_tarihi_hesapla(r["giris_tarihi"], r["gece_sayisi"])
-        toplam = repository.rezervasyon_gecelik_toplami(r) * (r["gece_sayisi"] or 1)
-        if r["iptal"]:
-            durum_metni = "İptal Edildi"
-        elif repository.gelmedi_mi(r):
-            durum_metni = "Gelmedi (No-Show)"
-        elif r["checkin_yapildi"]:
-            durum_metni = "Check-in Yapıldı"
-        else:
-            durum_metni = "Aktif"
+        o = ozet.get(r["id"]) or {}
+        toplam = o.get("toplam", 0)
+        fiyat_birimleri = sorted({fiyat_tipi_goster(t) for t in o.get("fiyat_tipleri", set())})
+        fiyat_metni = " + ".join(fiyat_birimleri) if fiyat_birimleri else "-"
         ws.append([
-            r["id"], r["kat_adi"], r["oda_no"], r["ad_soyad"], r["tc_no"] or "",
-            r["telefon"] or "", r["kisi_sayisi"], r["giris_tarihi"], r["gece_sayisi"],
-            cikis, r["fiyat_tipi"], r["gecelik_ucret"], toplam,
-            r["referans"] or "", (r["grup_id"][:8] if r["grup_id"] else ""),
-            r["olusturan_kullanici"] or "", r["olusturma_tarihi"] or "",
-            durum_metni, r["notlar"] or ""
+            r["id"], r["oda_ozeti"] or "-", r["ad_soyad"], r["tc_no"] or "",
+            r["telefon"] or "", r["toplam_kisi"], r["giris_tarihi"], r["toplam_gece"],
+            r["cikis_tarihi"] or "", fiyat_metni, toplam,
+            r["referans"] or "", r["oda_sayisi"], r["olusturan_kullanici"] or "",
+            r["olusturma_tarihi"] or "", r["durum_etiket"] or "", r["notlar"] or ""
         ])
 
     for col_letter, genislik in zip(
-        "ABCDEFGHIJKLMNOPQRS", [5, 10, 8, 22, 14, 14, 8, 12, 8, 12, 10, 12, 12, 18, 10, 14, 16, 16, 30]
+        "ABCDEFGHIJKLMNOPQ", [5, 28, 22, 14, 14, 8, 12, 10, 12, 12, 14, 18, 9, 14, 16, 16, 30]
     ):
         ws.column_dimensions[col_letter].width = genislik
 

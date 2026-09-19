@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
 """
-Rezervasyon detay/düzenleme penceresi.
-Oda Durumu ve Takvim Görünümü ekranlarından bir isme çift tıklandığında açılır.
-Check-in anında TC No / kesin Ad Soyad bilgisini tamamlamak için kullanılır.
+Rezervasyon detay/düzenleme penceresi (ÇOK ODALI model).
+Oda Durumu, Takvim Görünümü ve Rezervasyon Yönetimi ekranlarından bir isme
+çift tıklandığında açılır. Bir rezervasyonun TÜM odaları ayrı ayrı gösterilir;
+her oda için kişi/check-in, tarih ve oda değişikliği oda başına yapılır.
 """
 
 from PySide6.QtWidgets import (
@@ -12,20 +13,12 @@ from PySide6.QtWidgets import (
     QDateEdit, QScrollArea, QWidget
 )
 from PySide6.QtCore import Qt, QDate
-from datetime import datetime, timedelta
+from datetime import date
 
 import repository
-from database import fiyat_tipi_goster, gecelik_fiyat, FIYAT_TIPLERI
+from database import fiyat_tipi_goster
 
-
-def _kisi_bazli_gecelik_toplam(rez_id, kisi_sayisi, gecelik_ucret):
-    """Kayıtlı kişilerin bireysel fiyatlarının toplamını döndürür.
-    Kişi başı fiyat yoksa rezervasyonun kendi (kisi * gecelik) değerine döner."""
-    misafirler = repository.misafirler_listele(rez_id)
-    ucretler = [m["gecelik_ucret"] for m in misafirler if m["gecelik_ucret"]]
-    if ucretler:
-        return sum(ucretler)
-    return (gecelik_ucret or 0) * (kisi_sayisi or 1)
+FIYAT_TIPLERI = ["Sabit", "Uye", "Ozel"]
 
 
 class TcAlan(QLineEdit):
@@ -39,12 +32,90 @@ class TcAlan(QLineEdit):
         QTimer.singleShot(0, self.selectAll)
 
 
+def _ro_durum_metni(ro, rez_iptal=False):
+    """Bir oda satırının insan okur durum metni."""
+    bugun = date.today().isoformat()
+    if rez_iptal:
+        return "İptal Edildi"
+    if ro["cikis_tarihi"]:
+        return "Çıkış yaptı"
+    if ro["checkin_yapildi"]:
+        return "✓ İçeride"
+    if ro["giris_tarihi"] < bugun:
+        return "⚠ Gelmedi (No-Show)"
+    return "Bekleniyor"
+
+
+class OdaTarihDialog(QDialog):
+    """Tek oda satırının giriş tarihi / gece sayısını değiştirir."""
+
+    def __init__(self, ro_row, parent=None):
+        super().__init__(parent)
+        self.ro_row = ro_row
+        self.setWindowTitle(f"Tarih Değiştir - {ro_row['kat_adi']} Oda {ro_row['oda_no']}")
+        self.setMinimumWidth(420)
+
+        layout = QVBoxLayout(self)
+        bilgi = QLabel(
+            f"<b>{ro_row['kat_adi']} - Oda {ro_row['oda_no']}</b> "
+            f"({ro_row['gece_sayisi']} gece, {ro_row['kisi_sayisi']} kişi)<br>"
+            f"Rezervasyonu alan: {ro_row['ad_soyad']}"
+        )
+        bilgi.setWordWrap(True)
+        layout.addWidget(bilgi)
+
+        form = QFormLayout()
+        self.tarih_giris = QDateEdit(QDate.fromString(ro_row["giris_tarihi"], "yyyy-MM-dd"))
+        self.tarih_giris.setCalendarPopup(True)
+        self.tarih_giris.setDisplayFormat("dd.MM.yyyy")
+        form.addRow("Yeni Giriş:", self.tarih_giris)
+
+        self.tarih_gece = QSpinBox()
+        self.tarih_gece.setRange(1, 90)
+        self.tarih_gece.setValue(ro_row["gece_sayisi"] or 1)
+        form.addRow("Gece Sayısı:", self.tarih_gece)
+        layout.addLayout(form)
+
+        not_label = QLabel(
+            "Ödemeler yeni aralığa göre yeniden kurulur. Önceden ödenmiş geceler "
+            "yeni aralığın dışında kalırsa uyarılacaksın (tutarları otomatik iade edilmez)."
+        )
+        not_label.setWordWrap(True)
+        not_label.setStyleSheet("font-style: italic; font-size: 10px;")
+        layout.addWidget(not_label)
+
+        btns = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
+        btns.button(QDialogButtonBox.Save).setText("Uygula")
+        btns.accepted.connect(self.uygula)
+        btns.rejected.connect(self.reject)
+        layout.addWidget(btns)
+
+    def uygula(self):
+        yeni_giris = self.tarih_giris.date().toString("yyyy-MM-dd")
+        yeni_gece = self.tarih_gece.value()
+        try:
+            dusen_odenmis = repository.rezervasyon_odasi_tarih_degistir(
+                self.ro_row["id"], yeni_giris, yeni_gece
+            )
+        except ValueError as e:
+            QMessageBox.warning(self, "Tarih Değiştirilemedi", str(e))
+            return
+        if dusen_odenmis:
+            QMessageBox.information(
+                self, "Ödenen Geceler",
+                "Şu geceler yeni tarih/gece planının dışında kaldı (ödendi bilgileri "
+                "korundu, tutar iade edilmedi):\n" + ", ".join(dusen_odenmis)
+            )
+        self.accept()
+
+
 class RezervasyonDetayDialog(QDialog):
     def __init__(self, rez_id, parent=None):
         super().__init__(parent)
         self.rez_id = rez_id
         self.kaydedildi = False
         self.rez = repository.rezervasyon_getir(rez_id)
+        self.odalar = repository.rezervasyon_odalar_listele(rez_id) if self.rez else []
 
         if self.rez is None:
             self.setWindowTitle("Bulunamadı")
@@ -53,8 +124,8 @@ class RezervasyonDetayDialog(QDialog):
             return
 
         self.setWindowTitle(f"Rezervasyon Detayı - {self.rez['ad_soyad']}")
-        self.setMinimumSize(880, 560)
-        self.resize(980, 640)
+        self.setMinimumSize(980, 620)
+        self.resize(1080, 690)
         self._arayuzu_kur()
 
     def _arayuzu_kur(self):
@@ -65,22 +136,30 @@ class RezervasyonDetayDialog(QDialog):
         layout = QVBoxLayout(ana)
         layout.setContentsMargins(12, 12, 12, 12)
 
-        cikis = repository.cikis_tarihi_hesapla(r["giris_tarihi"], r["gece_sayisi"])
         if r["iptal"]:
             durum_metni = "İptal Edildi"
-        elif repository.gelmedi_mi(r):
+        elif self.odalar and all(o["checkin_yapildi"] and not o["cikis_tarihi"] for o in self.odalar):
+            durum_metni = "✓ Tüm odalar içeride"
+        elif any(o["checkin_yapildi"] for o in self.odalar):
+            durum_metni = "Kısmen check-in (bazı odalar içeride)"
+        elif self.odalar and all(_ro_durum_metni(o, r["iptal"]) == "⚠ Gelmedi (No-Show)" for o in self.odalar):
             durum_metni = "⚠ GELMEDİ (No-Show)"
-        elif r["checkin_yapildi"]:
-            durum_metni = "✓ Check-in Yapıldı"
         else:
             durum_metni = "Bekleniyor (henüz check-in yapılmadı)"
 
         alinma_tarihi = (r["olusturma_tarihi"] or "").split(".")[0]
         alan_kullanici = r["olusturan_kullanici"] or "Bilinmiyor (eski kayıt)"
+        oda_ozeti = " + ".join(f"{o['kat_adi']} - Oda {o['oda_no']}" for o in self.odalar) or "-"
+        giris = min((o["giris_tarihi"] for o in self.odalar), default="-")
+        cikis = max(
+            (o["cikis_tarihi"] or repository.cikis_tarihi_hesapla(o["giris_tarihi"], o["gece_sayisi"])
+             for o in self.odalar), default="-"
+        )
 
         ust_bilgi = QLabel(
-            f"<b>{r['kat_adi']} - Oda {r['oda_no']}</b> ({r['oda_tipi']})<br>"
-            f"Giriş: {r['giris_tarihi']}  →  Çıkış: {cikis}  ({r['gece_sayisi']} gece)<br>"
+            f"<b>{r['ad_soyad']}</b><br>"
+            f"Odalar: <b>{oda_ozeti}</b><br>"
+            f"Giriş: {giris}  →  Çıkış: {cikis}  ({sum(o['gece_sayisi'] or 0 for o in self.odalar)} gece toplam)<br>"
             f"Durum: <b>{durum_metni}</b><br>"
             f"<span style='color:#555;'>Rezervasyon alınma tarihi: {alinma_tarihi}  |  "
             f"Alan kullanıcı: {alan_kullanici}</span>"
@@ -88,179 +167,115 @@ class RezervasyonDetayDialog(QDialog):
         ust_bilgi.setWordWrap(True)
         layout.addWidget(ust_bilgi)
 
-        if repository.gelmedi_mi(r):
-            uyari = QLabel(
-                "⚠ Bu misafir giriş tarihinde gelmedi (No-Show). Odayı başkasına vermek "
-                "istersen 'Rezervasyon Yönetimi' ekranından iptal edebilirsin."
-            )
+        if r["iptal"]:
+            uyari = QLabel("⚠ Bu rezervasyon iptal edildi. Oda satırları düzenlenemez; "
+                           "iptali geri almak için 'Rezervasyon Yönetimi' ekranını kullan.")
             uyari.setWordWrap(True)
             uyari.setStyleSheet("color: #c0392b; background-color: #f8d0d0; padding: 6px; border-radius: 4px;")
             layout.addWidget(uyari)
 
-        # ---- İKİ SÜTUNLU YATAY DÜZEN ----
-        kolonlar = QHBoxLayout()
-
-        # ---- SOL SÜTUN: Bilgiler ----
-        sol = QVBoxLayout()
-
+        # ---- SOL: iletişim bilgileri ----
         form_kutu = QGroupBox("Misafir Bilgileri (düzenlenebilir)")
         form = QFormLayout()
-
         self.ad_soyad = QLineEdit(r["ad_soyad"] or "")
         form.addRow("Ad Soyad:", self.ad_soyad)
-
         self.tc_no = QLineEdit(r["tc_no"] or "")
         self.tc_no.setMaxLength(11)
         self.tc_no.setPlaceholderText("Check-in anında girilir")
         form.addRow("TC No:", self.tc_no)
-
         self.telefon = QLineEdit(r["telefon"] or "")
         form.addRow("Telefon:", self.telefon)
-
-        kapasite = r["kapasite"] or 1
-        mevcut_kisi = r["kisi_sayisi"] or 1
-        ust_sinir = max(kapasite + 1, mevcut_kisi, 10)
-        self.kisi_sayisi = QSpinBox()
-        self.kisi_sayisi.setRange(1, ust_sinir)
-        self.kisi_sayisi.setValue(mevcut_kisi)
-        kapasite_bilgi = QLabel(f"(Bu odanın kapasitesi: {kapasite} kişi, ekstra yatakla {kapasite + 1})")
-        kapasite_bilgi.setStyleSheet("font-style: italic; font-size: 10px;")
-        form.addRow("Kişi Sayısı:", self.kisi_sayisi)
-        form.addRow("", kapasite_bilgi)
-
         self.referans = QLineEdit(r["referans"] or "")
         form.addRow("Referans:", self.referans)
-
         self.notlar = QTextEdit(r["notlar"] or "")
         self.notlar.setMaximumHeight(60)
         form.addRow("Notlar:", self.notlar)
-
         form_kutu.setLayout(form)
-        sol.addWidget(form_kutu)
+        layout.addWidget(form_kutu)
 
-        # ---- Kişi bazlı fiyatlar ----
-        kisi_kutu = QGroupBox("Odada Kayıtlı Kişiler (kişi başı fiyatlarla)")
-        kisi_layout = QVBoxLayout()
-        misafirler = repository.misafirler_listele(self.rez_id)
-        if misafirler:
-            k_tablo = QTableWidget()
-            k_tablo.setColumnCount(4)
-            k_tablo.setHorizontalHeaderLabels(["Ad Soyad", "TC No", "Fiyat Tipi", "Gecelik"])
-            k_tablo.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
-            k_tablo.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
-            k_tablo.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)
-            k_tablo.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeToContents)
-            k_tablo.setEditTriggers(QTableWidget.NoEditTriggers)
-            k_tablo.setAlternatingRowColors(True)
-            k_tablo.setRowCount(len(misafirler))
-            for i, m in enumerate(misafirler):
-                k_tablo.setItem(i, 0, QTableWidgetItem(m["ad_soyad"] or ""))
-                k_tablo.setItem(i, 1, QTableWidgetItem(m["tc_no"] or ""))
-                tip = m["fiyat_tipi"] or r["fiyat_tipi"]
-                ucret = m["gecelik_ucret"] or r["gecelik_ucret"]
-                k_tablo.setItem(i, 2, QTableWidgetItem(fiyat_tipi_goster(tip)))
-                k_tablo.setItem(i, 3, QTableWidgetItem(f"{ucret} TL/kişi/gece"))
-            kisi_layout.addWidget(k_tablo)
-        else:
-            bilgi = QLabel("Henüz kayıtlı kişi yok. 'Odadaki Kişileri Yönet / Check-in' ile "
-                           "her kişinin Ad, TC No ve fiyatı ayrı ayrı eklenir.")
-            bilgi.setWordWrap(True)
-            bilgi.setStyleSheet("font-style: italic; font-size: 10px;")
-            kisi_layout.addWidget(bilgi)
-        kisi_kutu.setLayout(kisi_layout)
-        sol.addWidget(kisi_kutu)
+        # ---- ODALAR TABLOSU ----
+        oda_kutu = QGroupBox("Bu Rezervasyonun Odaları (oda bazlı işlemler)")
+        oda_lay = QVBoxLayout()
 
-        gecelik_plan = _kisi_bazli_gecelik_toplam(self.rez_id, r["kisi_sayisi"], r["gecelik_ucret"])
-        toplam = gecelik_plan * (r["gece_sayisi"] or 1)
-        fiyat_bilgi = QLabel(
-            f"Rezervasyon fiyat tipi: <b>{fiyat_tipi_goster(r['fiyat_tipi'])}</b> "
-            f"(varsayılan {r['gecelik_ucret']} TL/kişi/gece)<br>"
-            f"<b>Toplam: {toplam} TL</b>"
-            f"<span style='color:#777;'>  ({gecelik_plan} TL/gece × {r['gece_sayisi']} gece)</span>"
+        tablo = QTableWidget()
+        tablo.setColumnCount(9)
+        tablo.setHorizontalHeaderLabels([
+            "Oda", "Giriş", "Gece", "Çıkış", "Kişi", "Fiyat Tipi", "Gecelik", "Durum", "İşlemler"
+        ])
+        hh = tablo.horizontalHeader()
+        hh.setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        hh.setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        hh.setSectionResizeMode(2, QHeaderView.ResizeToContents)
+        hh.setSectionResizeMode(3, QHeaderView.ResizeToContents)
+        hh.setSectionResizeMode(4, QHeaderView.ResizeToContents)
+        hh.setSectionResizeMode(5, QHeaderView.ResizeToContents)
+        hh.setSectionResizeMode(6, QHeaderView.ResizeToContents)
+        hh.setSectionResizeMode(7, QHeaderView.ResizeToContents)
+        hh.setSectionResizeMode(8, QHeaderView.Stretch)
+        tablo.verticalHeader().setVisible(False)
+        tablo.verticalHeader().setDefaultSectionSize(40)
+        tablo.setEditTriggers(QTableWidget.NoEditTriggers)
+        tablo.setRowCount(len(self.odalar))
+
+        for i, o in enumerate(self.odalar):
+            cikis_str = o["cikis_tarihi"] or repository.cikis_tarihi_hesapla(o["giris_tarihi"], o["gece_sayisi"])
+            degerler = [
+                f"{o['kat_adi']} - Oda {o['oda_no']}",
+                o["giris_tarihi"], str(o["gece_sayisi"]), cikis_str,
+                str(o["kisi_sayisi"]), fiyat_tipi_goster(o["fiyat_tipi"]),
+                f"{repository.odasi_gecelik_toplami(o):,}₺/gece",
+                _ro_durum_metni(o, r["iptal"]),
+            ]
+            for col, val in enumerate(degerler):
+                tablo.setItem(i, col, QTableWidgetItem(val))
+
+            islem_widget = QWidget()
+            il = QHBoxLayout(islem_widget)
+            il.setContentsMargins(2, 2, 2, 2)
+            il.setSpacing(4)
+
+            aktif_mi = not r["iptal"]
+            if aktif_mi:
+                kisi_btn = QPushButton("Misafirleri Düzenle" if o["checkin_yapildi"] else "👥 Kişiler / Check-in")
+                kisi_btn.clicked.connect(lambda checked, oid=o["id"]: self._odada_kisiler(oid))
+                il.addWidget(kisi_btn)
+
+                tarih_btn = QPushButton("🗓 Tarih")
+                tarih_btn.clicked.connect(lambda checked, oo=o: self._odada_tarih(oo))
+                il.addWidget(tarih_btn)
+
+                oddeg_btn = QPushButton("🔁 Oda")
+                oddeg_btn.clicked.connect(lambda checked, oo=o: self._odada_oda_degistir(oo))
+                il.addWidget(oddeg_btn)
+
+            if o["checkin_yapildi"] and not o["cikis_tarihi"] and not r["iptal"]:
+                cikis_btn = QPushButton("🚪 Çıkış Yap")
+                cikis_btn.clicked.connect(lambda checked, oo=o: self._odada_cikis(oo))
+                il.addWidget(cikis_btn)
+
+            tablo.setCellWidget(i, 8, islem_widget)
+
+        oda_lay.addWidget(tablo)
+
+        toplam = repository.rezervasyon_toplami(self.rez_id)
+        toplam_oda_gece = sum((o["gece_sayisi"] or 0) for o in self.odalar)
+        ozet_bilgi = QLabel(
+            f"<b>Toplam tutar (tüm odalar, tüm geceler): {toplam:,}₺</b>  "
+            f"·  {len(self.odalar)} oda  ·  {toplam_oda_gece} gece"
         )
-        fiyat_bilgi.setWordWrap(True)
-        fiyat_bilgi.setStyleSheet("font-size: 11px; padding: 4px; background-color: rgba(127,127,127,0.08); border-radius: 4px;")
-        sol.addWidget(fiyat_bilgi)
+        ozet_bilgi.setStyleSheet("font-size: 11px; padding: 4px; background-color: rgba(127,127,127,0.08); border-radius: 4px;")
+        oda_lay.addWidget(ozet_bilgi)
+        oda_kutu.setLayout(oda_lay)
+        layout.addWidget(oda_kutu)
 
-        sol.addStretch()
-
-        # ---- SAĞ SÜTUN: Ödeme + Tarih + Grup ----
-        sag = QVBoxLayout()
-
-        odemeler = repository.rezervasyon_odemeleri(self.rez_id)
-        if odemeler:
-            odeme_kutu = QGroupBox("Gecelik Ödeme Durumu")
-            odeme_layout = QVBoxLayout()
-            tablo = QTableWidget()
-            tablo.setColumnCount(3)
-            tablo.setHorizontalHeaderLabels(["Tarih", "Tutar", "Durum"])
-            tablo.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-            tablo.setEditTriggers(QTableWidget.NoEditTriggers)
-            tablo.setRowCount(len(odemeler))
-            tablo.setMaximumHeight(170)
-            for i, o in enumerate(odemeler):
-                durum = "✓ Ödendi" if o["odendi"] else "✗ Ödenmedi"
-                if o["odendi"] and o["odeme_sekli"]:
-                    durum += f" ({o['odeme_sekli']})"
-                tablo.setItem(i, 0, QTableWidgetItem(o["tarih"]))
-                tablo.setItem(i, 1, QTableWidgetItem(f"{o['tutar']} TL"))
-                tablo.setItem(i, 2, QTableWidgetItem(durum))
-            odeme_layout.addWidget(tablo)
-            not_label = QLabel("Ödeme durumunu değiştirmek için 'Oda Durumu' ekranındaki ilgili güne git.")
-            not_label.setStyleSheet("font-style: italic; font-size: 10px;")
-            odeme_layout.addWidget(not_label)
-            odeme_kutu.setLayout(odeme_layout)
-            sag.addWidget(odeme_kutu)
-
-        tarih_kutu = QGroupBox("Tarihi Değiştir")
-        tarih_layout = QVBoxLayout()
-        tarih_satir = QHBoxLayout()
-        tarih_satir.addWidget(QLabel("Giriş:"))
-        self.tarih_giris = QDateEdit(QDate.fromString(r["giris_tarihi"], "yyyy-MM-dd"))
-        self.tarih_giris.setCalendarPopup(True)
-        self.tarih_giris.setDisplayFormat("dd.MM.yyyy")
-        tarih_satir.addWidget(self.tarih_giris)
-        tarih_satir.addWidget(QLabel("Gece:"))
-        self.tarih_gece = QSpinBox()
-        self.tarih_gece.setRange(1, 90)
-        self.tarih_gece.setValue(r["gece_sayisi"] or 1)
-        tarih_satir.addWidget(self.tarih_gece)
-        tarih_btn = QPushButton("Uygula")
-        tarih_btn.clicked.connect(lambda: self._tarihi_uygula())
-        tarih_satir.addWidget(tarih_btn)
-        tarih_layout.addLayout(tarih_satir)
-        tarih_not = QLabel("Yeni giriş tarihi ile gece sayısına göre çıkış ve ödeme planı yeniden kurulur. "
-                           "Önceden ödenmiş geceler yeni aralığın dışında kalırsa uyarılacaksın.")
-        tarih_not.setWordWrap(True)
-        tarih_not.setStyleSheet("font-style: italic; font-size: 10px;")
-        tarih_layout.addWidget(tarih_not)
-        tarih_kutu.setLayout(tarih_layout)
-        sag.addWidget(tarih_kutu)
-
-        if self.rez["grup_id"]:
-            grup = repository.grup_rezervasyonlari(self.rez["grup_id"], haric_rez_id=self.rez_id)
-            if grup:
-                grup_kutu = QGroupBox("Aynı Rezervasyondaki Diğer Odalar")
-                grup_layout = QVBoxLayout()
-                for g in grup:
-                    grup_layout.addWidget(QLabel(
-                        f"• {g['kat_adi']} - Oda {g['oda_no']}  ({g['giris_tarihi']}, {g['gece_sayisi']} gece)"
-                    ))
-                grup_kutu.setLayout(grup_layout)
-                sag.addWidget(grup_kutu)
-
-        sag.addStretch()
-
-        kolonlar.addLayout(sol, 1)
-        kolonlar.addLayout(sag, 1)
-        layout.addLayout(kolonlar)
-
-        misafir_btn = QPushButton("👥 Odadaki Kişileri Yönet / Check-in")
-        misafir_btn.clicked.connect(lambda: self._misafirleri_yonet())
-        layout.addWidget(misafir_btn)
+        iptal_btn = QPushButton("🚫 Rezervasyonu İptal Et")
+        iptal_btn.setStyleSheet("color: #c0392b;")
+        iptal_btn.clicked.connect(self.iptal_et)
+        iptal_btn.setEnabled(not r["iptal"])
+        layout.addWidget(iptal_btn)
 
         btns = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Close)
-        btns.button(QDialogButtonBox.Save).setText("Kaydet")
+        btns.button(QDialogButtonBox.Save).setText("Bilgileri Kaydet")
         btns.button(QDialogButtonBox.Close).setText("Kapat")
         btns.accepted.connect(self.kaydet)
         btns.rejected.connect(self.reject)
@@ -269,48 +284,63 @@ class RezervasyonDetayDialog(QDialog):
         kaydir = QScrollArea()
         kaydir.setWidgetResizable(True)
         kaydir.setWidget(ana)
-        kaydir.setWidgetResizable(True)
         kok.addWidget(kaydir)
 
-    def _misafirleri_yonet(self):
-        dialog = CheckinDialog(self.rez_id, self)
+    # ---------------- oda bazlı aksiyonlar ----------------
+    def _odada_kisiler(self, ro_id):
+        dialog = CheckinDialog(ro_id, self)
         dialog.exec()
         if dialog.kaydedildi:
             self.kaydedildi = True
             self.accept()
 
-    def _hesaplanan_dusen_odenmis(self, yeni_giris_str, yeni_gece):
-        """Yeni araliga girmeyecek ODENMIS gecelerin tarihlerini dondurur (on izleme)."""
-        odemeler = repository.rezervasyon_odemeleri(self.rez_id)
-        g = datetime.strptime(yeni_giris_str, "%Y-%m-%d").date()
-        yeni_set = { (g + timedelta(days=i)).isoformat() for i in range(yeni_gece) }
-        return sorted(o["tarih"] for o in odemeler if o["odendi"] and o["tarih"] not in yeni_set)
+    def _odada_tarih(self, ro_row):
+        dialog = OdaTarihDialog(ro_row, self)
+        if dialog.exec() == QDialog.Accepted:
+            self.kaydedildi = True
+            self.accept()
 
-    def _tarihi_uygula(self):
-        if self.rez["iptal"]:
-            QMessageBox.warning(self, "İptal Edilmiş", "İptal edilen bir rezervasyonun tarihi değiştirilemez.")
-            return
-        yeni_giris = self.tarih_giris.date().toString("yyyy-MM-dd")
-        yeni_gece = self.tarih_gece.value()
-        dusenler = self._hesaplanan_dusen_odenmis(yeni_giris, yeni_gece)
-        if dusenler:
-            cevap = QMessageBox.question(
-                self,
-                "Önceden Ödenen Geceler",
-                "Yeni tarih/gece sayısında şu ÖNCEDEN ÖDENMİŞ geceler yer almayacak:\n"
-                + ", ".join(dusenler)
-                + "\n\nBu gecelerin tutarı otomatik iade edilmez; iade/avans işlemini "
-                  "'Oda Durumu' ekranından elle yapmalısın.\n\nYine de tarihi değiştir?",
-            )
-            if cevap != QMessageBox.Yes:
+    def _odada_oda_degistir(self, ro_row):
+        from main import OdaDegistirDialog
+        dialog = OdaDegistirDialog(ro_row, self)
+        if dialog.exec() == QDialog.Accepted:
+            yeni_oda_id = dialog.secilen_oda_id()
+            degisim_tarihi = dialog.secilen_tarih()
+            try:
+                repository.oda_degistir(ro_row["id"], yeni_oda_id, degisim_tarihi)
+            except ValueError as e:
+                QMessageBox.warning(self, "Oda Değiştirilemedi", str(e))
                 return
+            self.kaydedildi = True
+            self.accept()
+
+    def _odada_cikis(self, ro_row):
+        cevap = QMessageBox.question(
+            self, "Çıkış İşlemi",
+            f"{ro_row['kat_adi']} - Oda {ro_row['oda_no']}'daki misafir çıkış yaptı mı? "
+            "İşlem sonrası oda 'temiz' durumuna alınır.",
+            QMessageBox.Yes | QMessageBox.No
+        )
+        if cevap != QMessageBox.Yes:
+            return
         try:
-            repository.rezervasyon_tarih_degistir(self.rez_id, yeni_giris, yeni_gece)
+            repository.odasi_cikis_yap(ro_row["id"])
         except ValueError as e:
-            QMessageBox.warning(self, "Tarih Değiştirilemedi", str(e))
+            QMessageBox.warning(self, "Çıkış Yapılamadı", str(e))
             return
         self.kaydedildi = True
         self.accept()
+
+    def iptal_et(self):
+        cevap = QMessageBox.question(
+            self, "Rezervasyonu İptal Et",
+            f"'{self.rez['ad_soyad']}' rezervasyonunun TÜM odaları iptal edilecek. Emin misin?",
+            QMessageBox.Yes | QMessageBox.No
+        )
+        if cevap == QMessageBox.Yes:
+            repository.rezervasyon_iptal(self.rez_id)
+            self.kaydedildi = True
+            self.accept()
 
     def kaydet(self):
         if not self.ad_soyad.text().strip():
@@ -322,52 +352,41 @@ class RezervasyonDetayDialog(QDialog):
                 ad_soyad=self.ad_soyad.text().strip(),
                 tc_no=self.tc_no.text().strip(),
                 telefon=self.telefon.text().strip(),
-                kisi_sayisi=self.kisi_sayisi.value(),
                 referans=self.referans.text().strip(),
                 notlar=self.notlar.toPlainText().strip(),
             )
         except ValueError as e:
-            QMessageBox.warning(self, "Kapasite Aşıldı", str(e))
-            return
-        try:
-            ekstra = self.kisi_sayisi.value() > (self.rez["kapasite"] or 1)
-            repository.kisi_sayisi_senkronla(
-                self.rez_id, self.kisi_sayisi.value(), ekstra_yatak=ekstra
-            )
-        except ValueError as e:
-            QMessageBox.warning(self, "Kapasite Aşıldı", str(e))
+            QMessageBox.warning(self, "Hata", str(e))
             return
         self.kaydedildi = True
         self.accept()
 
 
 class CheckinDialog(QDialog):
-    """Misafirleri odaya teker teker ekleme / check-in tamamlama penceresi.
+    """Bir ODA SATIRININ misafirlerini kaydetme / check-in tamamlama penceresi.
     Her kişinin fiyatı (Fiyat Tipi + Gecelik Ücret) AYRI AYRI seçilebilir:
     aynı odada kalan kişiler farklı fiyat ödeyebilir (ör. 1'i Üye, 1'i Sabit, 1'i Özel).
-    Kaydedince kisi_sayisi ve ödenmemiş gecelerin tutarı kişi başı fiyatlara göre otomatik güncellenir."""
+    Kaydedince kişiler kaydedilir, oda satırı check-in yapılır ve henüz ödenmemiş
+    gecelerin tutarı kişi başı fiyatlara göre otomatik güncellenir."""
 
-    def __init__(self, rez_id, parent=None):
+    def __init__(self, ro_id, parent=None):
         super().__init__(parent)
-        self.rez_id = rez_id
+        self.ro_id = ro_id
         self.kaydedildi = False
-        self.rez = repository.rezervasyon_getir(rez_id)
+        self.ro = repository.rezervasyon_odasi_getir(ro_id)
         self.misafir_satirlari = []  # [(ad_edit, tc_edit, tip_combo, ucret_spin, sil_btn)]
 
-        if self.rez is None:
+        if self.ro is None:
             self.setWindowTitle("Bulunamadı")
             layout = QVBoxLayout(self)
-            layout.addWidget(QLabel("Bu rezervasyon bulunamadı."))
+            layout.addWidget(QLabel("Bu oda satırı bulunamadı."))
             return
 
-        self.kapasite = self.rez["kapasite"] or 1
+        self.kapasite = self.ro["kapasite"] or 1
         self.ekstra_yatak = False
-        # Kayıt limiti: resmî kapasitenin ÜZERİNDE de misafir kaydedilebilir
-        # (+2 kişi; ekstra yatak işaretlenirse +1 daha). Örn. 2 kişilik odaya
-        # 3. misafir, 1 kişilik odaya 2. misafir rahatça eklenebilir.
         self.kayit_limiti = max(self.kapasite + 2, 3)
-        baslik = "Check-in Yap" if not self.rez["checkin_yapildi"] else "Misafirleri Düzenle"
-        self.setWindowTitle(f"{baslik} - {self.rez['kat_adi']} Oda {self.rez['oda_no']}")
+        baslik = "Check-in Yap" if not self.ro["checkin_yapildi"] else "Misafirleri Düzenle"
+        self.setWindowTitle(f"{baslik} - {self.ro['kat_adi']} Oda {self.ro['oda_no']}")
         self.setMinimumSize(760, 520)
         self.resize(820, 560)
         self._arayuzu_kur()
@@ -376,7 +395,7 @@ class CheckinDialog(QDialog):
         return self.kayit_limiti + (1 if self.ekstra_yatak else 0)
 
     def _arayuzu_kur(self):
-        r = self.rez
+        r = self.ro
         layout = QVBoxLayout(self)
 
         cikis = repository.cikis_tarihi_hesapla(r["giris_tarihi"], r["gece_sayisi"])
@@ -399,10 +418,11 @@ class CheckinDialog(QDialog):
         self.misafir_tablo = QTableWidget()
         self.misafir_tablo.setColumnCount(5)
         self.misafir_tablo.setHorizontalHeaderLabels(["Ad Soyad", "TC No", "Fiyat Tipi", "Gecelik (TL)", ""])
-        self.misafir_tablo.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
-        self.misafir_tablo.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
-        self.misafir_tablo.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)
-        self.misafir_tablo.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeToContents)
+        tablo_hh = self.misafir_tablo.horizontalHeader()
+        tablo_hh.setSectionResizeMode(0, QHeaderView.Stretch)
+        tablo_hh.setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        tablo_hh.setSectionResizeMode(2, QHeaderView.ResizeToContents)
+        tablo_hh.setSectionResizeMode(3, QHeaderView.ResizeToContents)
         misafir_layout.addWidget(self.misafir_tablo)
 
         self.ekle_btn = QPushButton("➕ Kişi Ekle")
@@ -416,7 +436,7 @@ class CheckinDialog(QDialog):
         misafir_kutu.setLayout(misafir_layout)
         layout.addWidget(misafir_kutu)
 
-        mevcut = repository.misafirler_listele(self.rez_id)
+        mevcut = repository.odasi_misafirler_listele(self.ro_id)
         baslangic_sayisi = len(mevcut) if mevcut else (r["kisi_sayisi"] or 1)
         if baslangic_sayisi > self.kapasite:
             self.ekstra_yatak_check.setChecked(True)
@@ -439,7 +459,7 @@ class CheckinDialog(QDialog):
         layout.addWidget(self.fiyat_bilgi)
 
         btns = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Close)
-        kaydet_metni = "Check-in'i Tamamla" if not self.rez["checkin_yapildi"] else "Kaydet"
+        kaydet_metni = "Check-in'i Tamamla" if not r["checkin_yapildi"] else "Kaydet"
         btns.button(QDialogButtonBox.Save).setText(kaydet_metni)
         btns.button(QDialogButtonBox.Close).setText("Kapat")
         btns.accepted.connect(self.kaydet)
@@ -471,8 +491,8 @@ class CheckinDialog(QDialog):
         tc_edit.setPlaceholderText("TC No - 11 hane (zorunlu)")
         tc_edit.setMaxLength(11)
 
-        r_fiyat = self.rez["fiyat_tipi"]
-        r_ucret = self.rez["gecelik_ucret"]
+        r_fiyat = self.ro["fiyat_tipi"]
+        r_ucret = self.ro["gecelik_ucret"]
         tip = fiyat_tipi if fiyat_tipi else r_fiyat
         ucret = gecelik_ucret if gecelik_ucret else r_ucret
 
@@ -510,6 +530,7 @@ class CheckinDialog(QDialog):
         self._fiyat_ozetini_yenile()
 
     def _tip_degisti(self, tip_combo, ucret_spin, r_ucret):
+        from database import gecelik_fiyat
         tip = tip_combo.currentText()
         if tip != "Ozel":
             ucret_spin.setValue(gecelik_fiyat(tip, None))
@@ -538,14 +559,14 @@ class CheckinDialog(QDialog):
         if not hasattr(self, "fiyat_bilgi"):
             return
         gece_toplam = sum(s[3].value() for s in self.misafir_satirlari)
-        genel_toplam = gece_toplam * (self.rez["gece_sayisi"] or 1)
+        genel_toplam = gece_toplam * (self.ro["gece_sayisi"] or 1)
         parcalar = []
         for s in self.misafir_satirlari:
             ad = s[0].text().strip() or "?"
             parcalar.append(f"{fiyat_tipi_goster(s[2].currentText())} {s[3].value()}₺")
         self.fiyat_bilgi.setText(
             f"<b>Gecelik toplam: {gece_toplam}₺</b> · Genel toplam: <b>{genel_toplam}₺</b>"
-            f" ({self.rez['gece_sayisi']} gece)   —  Kişi bazlı: {', '.join(parcalar) or '—'}"
+            f" ({self.ro['gece_sayisi']} gece)   —  Kişi bazlı: {', '.join(parcalar) or '—'}"
         )
 
     def kaydet(self):
@@ -577,8 +598,8 @@ class CheckinDialog(QDialog):
                 return
             misafir_listesi.append((ad, tc, tip, ucret))
 
-        repository.misafirleri_kaydet(self.rez_id, misafir_listesi, ekstra_yatak=self.ekstra_yatak)
-        repository.checkin_yap(self.rez_id)
+        repository.odasi_misafirleri_kaydet(self.ro_id, misafir_listesi, ekstra_yatak=self.ekstra_yatak)
+        repository.odasi_checkin_yap(self.ro_id)
 
         self.kaydedildi = True
         self.accept()

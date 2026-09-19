@@ -15,6 +15,24 @@ edebilmesi için hazırlandı. İlk iş olarak okuyun.
 3. Kullanıcı onayı verince exe üretilir: `python guncelleme_olustur.py`
    -> `dagitim\Misafirhane_Guncelleme_<surum>.exe` -> Masaüstüne kopyalanır.
 
+## Bugün yapılanlar (1.0.3)
+- **Çok odalı rezervasyon**: tek rezervasyona birden çok oda; `database.py` rezervasyonlar/
+  rezervasyon_odalar şeması; `repository.rezervasyon_olustur(odalar_list, ...)`; Yeni
+  Rezervasyon çok odalı giriş, detay ekranı (`detay_dialog.py`), oda değiştirme ve
+  check-in/çıkış oda satırı bazlı.
+- **Geçmiş Kayıtlar**: Rezervasyon Yönetimi'nde yeni "Göster" filtresi
+  (`rezervasyon_listesi("gecmis")`, `acik_odasi=0 HAVING`) — çıkışı yapılmış eski
+  misafirler aranabilir/sıralanabilir/Excel'e aktarılabilir.
+- **Günün Girişleri**: çok odalı rezervasyon tek satır; "Oda Durumları" sütununda her
+  oda için Geldi/Gelmedi/Bekleniyor; Durum sütunu Kısmen Geldi (n/m).
+- **Performans**: arama yalnızca Ad Soyad; 250 ms debounce (`QTimer`); N+1 fiyat/tutar
+  sorgusu yerine `rezervasyonlari_toplam_ozeti` (tek sorgu, export da kullanır);
+  `setRowCount` + `setUpdatesEnabled(False)`; 250+ satırda işlem butonları gizlenir
+  (çift tık -> detay). Ölçüm: 1168 satır ~140 ms, arama ~35 ms.
+- **Düzeltmeler**: `rezervasyon_odalar_listele` artık `ad_soyad` vb. içerir (Oda Değiştir /
+  Tarih Değiştir açılmıyordu); `tema.renklendir` `setForeground`'a string geçiyordu
+  (iptal listesinde çökme) -> QColor.
+
 ## Bugün yapılanlar (1.0.2 -> 1.0.2.2)
 - **Oda Değiştir dialogu** tabloya çevrildi (`main.py`, `OdaDegistirDialog`): sütunlar
   Oda / Tip / Kapasite / Oda Durumu / Bu Aralıkta Müsaitlik; renk: yeşil=boş,
@@ -36,12 +54,13 @@ edebilmesi için hazırlandı. İlk iş olarak okuyun.
     20'sinde oda değiştir, girişi 19'a al -> çakışma yok, toplam gece korunur).
 
 ## Mevcut durum / SIRADAKİ
-- `versiyon.py` `SURUM = "1.0.2.2"`; `YENILIKLER` güncel.
-- 1.0.2.2 güncelleme exe'i önceden ÜRETİLDİ ve Masaüstüne kopyalandı, AMA yeni iş akışı
-  gereği KULLANICI TESTİ VE ONAYI OLMADAN uygulanmayacak / yeniden üretilmeyecek.
-- Kullanıcı dev modu testini evdeki bilgisayarda yapacak. Test sonucunu ve istediği
-  değişiklikleri bildirdiğinde: kodu güncelle (gerekirse sürümü yama artır), sonra
-  exe üret ve Masaüstüne kopyala. GitHub push/release için kullanıcı onayı alın.
+- `versiyon.py` `SURUM = "1.0.3"`; YENILIKLER güncel; README'ye 1.0.2 / 1.0.2.1 / 1.0.2.2 / 1.0.3
+  satırları da eklendi.
+- 1.0.3 exe'leri ÜRETİLDİ ve Masaüstüne kopyalandı: `Misafirhane_Guncelleme_1.0.3.exe`,
+  `Misafirhane_Kurulum_1.0.3.exe` (SHA256 yukarıda adımlarda; `Get-FileHash`).
+- Uygulama kullanıcı tarafından dev modda test edildi ve onaylandı. Kod 1.0.3 olarak
+  commit/push edildi. Sıradaki adım (istenirse): exe'leri GitHub Releases'e yükle
+  (makinede `gh` CLI yok, elle/`gh` ile yapılır).
 
 ## Teknik ortam
 - Repo kökü: `misafirhane_app` (git bu klasörde). Uzak: `github.com/DorDeorz/misafirhane-app`,

@@ -94,11 +94,16 @@ def gecmis_gecelerini_ode(rez_id, oran=0.75):
     """Bir rezervasyonun BUGÜNE KADAR (bugün dahil) olan gecelerinin bir kısmını
     'ödendi' yapar (gerçekçi bir ödeme oranı, gelecek geceler hep ödenmemiş kalır)."""
     bugun = date.today().isoformat()
-    odemeler = repository.rezervasyon_odemeleri(rez_id)
-    for o in odemeler:
-        if o["tarih"] <= bugun and random.random() < oran:
-            sekil = random.choice(database.ODEME_SEKILLERI)
-            repository.odeme_guncelle(o["id"], True, sekil)
+    for ro in repository.rezervasyon_odalar_listele(rez_id):
+        for o in repository.odasi_odemeler(ro["id"]):
+            if o["tarih"] <= bugun and random.random() < oran:
+                sekil = random.choice(database.ODEME_SEKILLERI)
+                repository.odeme_guncelle(o["id"], True, sekil)
+
+
+def tek_ro(rez_id):
+    """Tek odalı bir rezervasyonun ilk (tek) oda satırını verir."""
+    return repository.rezervasyon_odalar_listele(rez_id)[0]
 
 
 def main():
@@ -140,14 +145,13 @@ def main():
                         # Gecmis tarihe rezervasyon olusturuluyorsa gecmis engeli kapali gonder
                         gecmis_kontrol = giris_str >= bugun.isoformat()
                         rez_id = repository.rezervasyon_olustur(
-                            oda_id=oda["id"],
+                            odalar=[dict(
+                                oda_id=oda["id"], giris_tarihi=giris_str, gece_sayisi=gece,
+                                kisi_sayisi=kisi, fiyat_tipi=fiyat_tipi,
+                            )],
                             ad_soyad=rastgele_isim(),
                             tc_no=yeni_tc(),
                             telefon=yeni_telefon(),
-                            kisi_sayisi=kisi,
-                            giris_tarihi=giris_str,
-                            gece_sayisi=gece,
-                            fiyat_tipi=fiyat_tipi,
                             referans=rastgele_referans(),
                             olusturan_kullanici=rastgele_kullanici(),
                             gecmis_kontrol=gecmis_kontrol,
@@ -165,16 +169,18 @@ def main():
                             if random.random() < 0.08:
                                 pass  # kasti olarak check-in yapilmadan birakiliyor -> No-Show ornegi
                             else:
+                                ro = tek_ro(rez_id)
                                 isimler = [rastgele_isim() for _ in range(kisi)]
                                 tcler = [yeni_tc() for _ in range(kisi)]
-                                repository.misafirleri_kaydet(rez_id, list(zip(isimler, tcler)))
-                                repository.checkin_yap(rez_id)
+                                repository.odasi_misafirleri_kaydet(ro["id"], list(zip(isimler, tcler)))
+                                repository.odasi_checkin_yap(ro["id"])
                                 gecmis_gecelerini_ode(rez_id, oran=0.75)
                         elif giris_str == bugun_str and random.random() < 0.6:
+                            ro = tek_ro(rez_id)
                             isimler = [rastgele_isim() for _ in range(kisi)]
                             tcler = [yeni_tc() for _ in range(kisi)]
-                            repository.misafirleri_kaydet(rez_id, list(zip(isimler, tcler)))
-                            repository.checkin_yap(rez_id)
+                            repository.odasi_misafirleri_kaydet(ro["id"], list(zip(isimler, tcler)))
+                            repository.odasi_checkin_yap(ro["id"])
                             gecmis_gecelerini_ode(rez_id, oran=0.75)
 
                         # nadiren iptal edilmis rezervasyon ornegi
@@ -202,19 +208,19 @@ def main():
             break
 
     if len(bos_odalar_orta_vade) >= 3:
-        grup_id = repository.yeni_grup_id()
         grup_ad = "Kemal Öztürk (Grup Rezervasyonu)"
         grup_tc = yeni_tc()
         grup_tel = yeni_telefon()
-        for oda in bos_odalar_orta_vade[:3]:
-            repository.rezervasyon_olustur(
-                oda_id=oda["id"], ad_soyad=grup_ad, tc_no=grup_tc, telefon=grup_tel,
-                kisi_sayisi=kapasiteye_uygun_kisi(oda["kapasite"]),
-                giris_tarihi=grup_tarih, gece_sayisi=2, fiyat_tipi="Sabit",
-                referans="Başkan Ahmet Bey", grup_id=grup_id,
-                olusturan_kullanici=rastgele_kullanici(),
-            )
-            olusturulan_rez_sayisi += 1
+        grup_odalar = [
+            dict(oda_id=oda["id"], giris_tarihi=grup_tarih, gece_sayisi=2,
+                 kisi_sayisi=kapasiteye_uygun_kisi(oda["kapasite"]), fiyat_tipi="Sabit")
+            for oda in bos_odalar_orta_vade[:3]
+        ]
+        repository.rezervasyon_olustur(
+            grup_odalar, ad_soyad=grup_ad, tc_no=grup_tc, telefon=grup_tel,
+            referans="Başkan Ahmet Bey", olusturan_kullanici=rastgele_kullanici(),
+        )
+        olusturulan_rez_sayisi += 1
         print(f"Grup rezervasyonu örneği eklendi: {grup_ad} ({grup_tarih}, 3 oda)")
 
     # ---------------------------------------------------------------
@@ -226,16 +232,17 @@ def main():
         tarih = (bugun + timedelta(days=3)).isoformat()
         if not repository.musaitlik_kontrol(oda["id"], tarih, 2):
             rez_id = repository.rezervasyon_olustur(
-                oda_id=oda["id"], ad_soyad="Ekstra Yataklı Aile", tc_no=yeni_tc(),
-                telefon=yeni_telefon(), kisi_sayisi=oda["kapasite"],
-                giris_tarihi=tarih, gece_sayisi=2, fiyat_tipi="Sabit",
-                olusturan_kullanici=rastgele_kullanici(),
+                odalar=[dict(oda_id=oda["id"], giris_tarihi=tarih, gece_sayisi=2,
+                              kisi_sayisi=oda["kapasite"], fiyat_tipi="Sabit")],
+                ad_soyad="Ekstra Yataklı Aile", tc_no=yeni_tc(),
+                telefon=yeni_telefon(), olusturan_kullanici=rastgele_kullanici(),
             )
             # check-in yapip ekstra yatakla 1 kisi daha ekleyelim
+            ro = tek_ro(rez_id)
             isimler = [rastgele_isim() for _ in range(oda["kapasite"] + 1)]
             tcler = [yeni_tc() for _ in range(oda["kapasite"] + 1)]
-            repository.misafirleri_kaydet(rez_id, list(zip(isimler, tcler)), ekstra_yatak=True)
-            repository.checkin_yap(rez_id)
+            repository.odasi_misafirleri_kaydet(ro["id"], list(zip(isimler, tcler)), ekstra_yatak=True)
+            repository.odasi_checkin_yap(ro["id"])
             olusturulan_rez_sayisi += 1
             print(f"Ekstra yatak örneği eklendi: Oda {oda['oda_no']} ({oda['kapasite']}+1 kişi)")
 
@@ -243,21 +250,24 @@ def main():
     # 4) ODA DEĞİŞİKLİĞİ ÖRNEĞİ (halihazırda kalan birini başka odaya taşı)
     # ---------------------------------------------------------------
     tum_rez = repository.rezervasyon_listesi("aktif")
-    devam_eden = [
-        r for r in tum_rez
-        if r["giris_tarihi"] <= bugun.isoformat()
-        and repository.cikis_tarihi_hesapla(r["giris_tarihi"], r["gece_sayisi"]) > (bugun + timedelta(days=1)).isoformat()
-    ]
+    devam_eden = []
+    for r in tum_rez:
+        for ro_satir in repository.rezervasyon_odalar_listele(r["id"]):
+            if ro_satir["giris_tarihi"] <= bugun.isoformat() and \
+               repository.cikis_tarihi_hesapla(ro_satir["giris_tarihi"], ro_satir["gece_sayisi"]) \
+                    > (bugun + timedelta(days=1)).isoformat():
+                devam_eden.append((r, ro_satir))
+                break
     if devam_eden:
-        secilen = devam_eden[0]
-        eski_oda_id = secilen["oda_id"]
+        secilen, secilen_ro = devam_eden[0]
+        eski_oda_id = secilen_ro["oda_id"]
         for oda in odalar:
             if oda["id"] == eski_oda_id:
                 continue
             degisim_tarihi = (bugun + timedelta(days=1)).isoformat()
             if not repository.musaitlik_kontrol(oda["id"], degisim_tarihi, 1):
                 try:
-                    repository.oda_degistir(secilen["id"], oda["id"], degisim_tarihi)
+                    repository.oda_degistir(secilen_ro["id"], oda["id"], degisim_tarihi)
                     print(f"Oda değişikliği örneği: '{secilen['ad_soyad']}' başka odaya taşındı.")
                     break
                 except ValueError:
@@ -285,7 +295,8 @@ def main():
 
     print(f"\nToplam oluşturulan rezervasyon: {olusturulan_rez_sayisi}")
     print(f"Toplam iptal edilen: {olusturulan_iptal_sayisi}")
-    gelmeyen_sayisi = sum(1 for r in repository.rezervasyon_listesi("aktif") if repository.gelmedi_mi(r))
+    gelmeyen_sayisi = sum(1 for r in repository.rezervasyon_listesi("aktif")
+                          if (r["gelmedi_odasi"] or 0) > 0)
     print(f"Toplam gelmeyen (No-Show): {gelmeyen_sayisi}")
     print("\n--- TEST KULLANICILARI (hepsinin şifresi: test1234) ---")
     for kullanici_adi, sifre, ad_soyad in TEST_KULLANICILAR:
@@ -296,3 +307,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

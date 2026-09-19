@@ -2,10 +2,19 @@
 """
 İş mantığı / veri erişim katmanı.
 GUI bu fonksiyonları çağırır; SQL burada saklı kalır.
+
+ÇOK ODALI MODEL:
+  rezervasyonlar      -> rezervasyon başına TEK satır (ad, telefon, referans, notlar, iptal)
+  rezervasyon_odalar  -> rezervasyonun HER ODASI için bir satır (oda, giriş, gece, kişi,
+                         fiyat tipi, gecelik ucret, checkin_yapildi, cikis_tarihi)
+  misafirler          -> ODA bazlı (rezervasyon_oda_id) kalan kişilerin listesi
+  odemeler            -> ODA bazlı (rezervasyon_oda_id) her gece için ayrı satır
+
+Oda bazlı check-in/çıkış, oda bazlı tarih/oda değişikliği.
+Grup = aynı rezervasyona birden fazla oda satırı eklemek demektir (tek satırda görünür).
 """
 
 import re
-import uuid
 from datetime import date, datetime, timedelta
 from database import get_connection, gecelik_fiyat, ODA_TIPI_KAPASITE
 import loglama
@@ -103,10 +112,13 @@ def oda_sil(oda_id):
     try:
         cur = conn.cursor()
         oda = cur.execute("SELECT * FROM odalar WHERE id=?", (oda_id,)).fetchone()
-        # aktif rezervasyonu olan oda silinemez
+        # aktif rezervasyon satiri olan oda silinemez
         aktif_rez = cur.execute(
-            "SELECT COUNT(*) as c FROM rezervasyonlar WHERE oda_id=? AND iptal=0 "
-            "AND date(giris_tarihi, '+' || gece_sayisi || ' day') > date('now')",
+            "SELECT COUNT(*) as c FROM rezervasyon_odalar ro "
+            "JOIN rezervasyonlar r ON r.id = ro.rezervasyon_id "
+            "WHERE ro.oda_id=? AND r.iptal=0 "
+            "AND date(COALESCE(NULLIF(ro.cikis_tarihi, ''), "
+            "              date(ro.giris_tarihi, '+' || ro.gece_sayisi || ' day'))) > date('now')",
             (oda_id,),
         ).fetchone()["c"]
         if aktif_rez:
@@ -130,11 +142,13 @@ def oda_guncelle(oda_id, kat_no, kat_adi, oda_no, oda_tipi, eski_no, kapasite=No
         cur = conn.cursor()
         if _oda_no_cakisma_var_mi(cur, kat_no, oda_no, haric_id=oda_id):
             raise ValueError(f"Bu kat ve oda numarasında ({oda_no}) başka bir aktif oda var.")
-        # kapasite dusurulurse, o odadaki aktif rezervasyonlari asmamali
+        # kapasite dusurulurse, o odadaki aktif rezervasyon satirlarini asmamali
         max_kisi = cur.execute(
-            "SELECT MAX(kisi_sayisi) as m FROM rezervasyonlar "
-            "WHERE oda_id=? AND iptal=0 "
-            "AND date(giris_tarihi, '+' || gece_sayisi || ' day') > date('now')",
+            "SELECT MAX(ro.kisi_sayisi) as m FROM rezervasyon_odalar ro "
+            "JOIN rezervasyonlar r ON r.id = ro.rezervasyon_id "
+            "WHERE ro.oda_id=? AND r.iptal=0 "
+            "AND date(COALESCE(NULLIF(ro.cikis_tarihi, ''), "
+            "              date(ro.giris_tarihi, '+' || ro.gece_sayisi || ' day'))) > date('now')",
             (oda_id,),
         ).fetchone()["m"]
         if max_kisi and kapasite < max_kisi:
@@ -169,22 +183,25 @@ def oda_durum_ayarla(oda_id, durum, ariza_gun=0):
 
         # SImdi konaklayan misafir varsa durum degistirilemez
         odede_mi = cur.execute(
-            "SELECT COUNT(*) as c FROM rezervasyonlar WHERE oda_id=? AND iptal=0 "
-            "AND checkin_yapildi=1 AND giris_tarihi <= ? "
-            "AND date(COALESCE(NULLIF(cikis_tarihi, ''), "
-            "              date(giris_tarihi, '+' || gece_sayisi || ' day'))) > ?",
+            "SELECT COUNT(*) as c FROM rezervasyon_odalar ro "
+            "JOIN rezervasyonlar r ON r.id = ro.rezervasyon_id "
+            "WHERE ro.oda_id=? AND r.iptal=0 AND ro.checkin_yapildi=1 AND ro.giris_tarihi <= ? "
+            "AND date(COALESCE(NULLIF(ro.cikis_tarihi, ''), "
+            "              date(ro.giris_tarihi, '+' || ro.gece_sayisi || ' day'))) > ?",
             (oda_id, bugun, bugun),
         ).fetchone()["c"]
         if odede_mi:
             raise ValueError(f"Oda {oda['oda_no']}'de şu an misafir kalıyor, durumu değiştirilemez.")
 
         if durum == "temizlikte":
-            # bugun giris yapacak / yasiyor olabilecek rezervasyonu olan odaya temizlikte denilemez
+            # bugun giris yapacak / yasiyor olabilecek rezervasyon satiri olan
+            # odaya temizlikte denilemez
             cakisma = cur.execute(
-                "SELECT ad_soyad FROM rezervasyonlar WHERE oda_id=? AND iptal=0 "
-                "AND giris_tarihi <= ? "
-                "AND date(COALESCE(NULLIF(cikis_tarihi, ''), "
-                "              date(giris_tarihi, '+' || gece_sayisi || ' day'))) > ?",
+                "SELECT r.ad_soyad FROM rezervasyon_odalar ro "
+                "JOIN rezervasyonlar r ON r.id = ro.rezervasyon_id "
+                "WHERE ro.oda_id=? AND r.iptal=0 AND ro.giris_tarihi <= ? "
+                "AND date(COALESCE(NULLIF(ro.cikis_tarihi, ''), "
+                "              date(ro.giris_tarihi, '+' || ro.gece_sayisi || ' day'))) > ?",
                 (oda_id, bugun, bugun),
             ).fetchall()
             if cakisma:
@@ -197,12 +214,13 @@ def oda_durum_ayarla(oda_id, durum, ariza_gun=0):
             if gun <= 0:
                 gun = 1
             bitis = (datetime.strptime(bugun, "%Y-%m-%d").date() + timedelta(days=gun)).isoformat()
-            # ariza araligina denk gelen aktif rezervasyon varsa engelle
+            # ariza araligina denk gelen aktif rezervasyon satiri varsa engelle
             cakisma = cur.execute(
-                "SELECT ad_soyad FROM rezervasyonlar WHERE oda_id=? AND iptal=0 "
-                "AND date(giris_tarihi) < date(?) "
-                "AND date(COALESCE(NULLIF(cikis_tarihi, ''), "
-                "              date(giris_tarihi, '+' || gece_sayisi || ' day'))) > date(?)",
+                "SELECT r.ad_soyad FROM rezervasyon_odalar ro "
+                "JOIN rezervasyonlar r ON r.id = ro.rezervasyon_id "
+                "WHERE ro.oda_id=? AND r.iptal=0 AND date(ro.giris_tarihi) < date(?) "
+                "AND date(COALESCE(NULLIF(ro.cikis_tarihi, ''), "
+                "              date(ro.giris_tarihi, '+' || ro.gece_sayisi || ' day'))) > date(?)",
                 (oda_id, bitis, bugun),
             ).fetchall()
             if cakisma:
@@ -223,165 +241,136 @@ def oda_durum_ayarla(oda_id, durum, ariza_gun=0):
         conn.close()
 
 
-# ---------------- REZERVASYONLAR ----------------
+# ---------------- ORTAK YARDIMCILAR ----------------
 
 def _tarih_araligi(giris_tarihi_str, gece_sayisi):
     baslangic = datetime.strptime(giris_tarihi_str, "%Y-%m-%d").date()
     return [baslangic + timedelta(days=i) for i in range(gece_sayisi)]
 
 
-def yeni_grup_id():
-    """Aynı anda birden fazla oda alan bir rezervasyonun parçalarını birbirine bağlamak için."""
-    return uuid.uuid4().hex[:12]
+def cikis_tarihi_hesapla(giris_tarihi_str, gece_sayisi):
+    baslangic = datetime.strptime(giris_tarihi_str, "%Y-%m-%d").date()
+    return (baslangic + timedelta(days=gece_sayisi)).isoformat()
 
 
-def _musaitlik_sorgusu(cur, oda_id, giris_tarihi, gece_sayisi, haric_rez_id=None):
+def _ro_efektif_cikis(ro):
+    """Oda satirinin odadan ciktigi tarih: gercek cikis yapildiysa cikis_tarihi,
+    yoksa giris + gece."""
+    if "cikis_tarihi" in ro and ro["cikis_tarihi"]:
+        return ro["cikis_tarihi"]
+    return cikis_tarihi_hesapla(ro["giris_tarihi"], ro["gece_sayisi"])
+
+
+def _oda_ozeti(odalar):
+    """Kat adi - oda no dizisini insan okur metne cevirir: 'Lobi-1 + 1.KAT-3'."""
+    return " + ".join(odalar) if odalar else "-"
+
+
+def _musaitlik_sorgusu(cur, oda_id, giris_tarihi, gece_sayisi, haric_rez_id=None, haric_ro_id=None):
     """Ayni baglanti/cursor uzerinden cakisma kontrolu (ayri baglanti acmadan).
-    Cikis yapilmis rezervasyonlar (cikis_tarihi set) odadan AYNI GUN itibariyle
-    ayrilmis sayilir; yani misafirin ciktigi gece oda yeni bir giris alabilir.
-    Bu yuzden rezervasyonun odada kaldigi son gece = cikis_tarihi (varsa), yoksa
-    giris + gece_sayisi kabul edilir."""
+    rezervasyon_odalar uzerinden bakilir; iptal edilmis ve cikis yapilmis
+    satirlar odada yer tutmaz. Cikis yapildigi gun yeni giris alinabilir."""
     q = """
-        SELECT r.id, r.ad_soyad, r.giris_tarihi, r.gece_sayisi
-        FROM rezervasyonlar r
-        WHERE r.oda_id = ? AND r.iptal = 0
-          AND date(r.giris_tarihi) < date(?, '+' || ? || ' day')
-          AND date(COALESCE(NULLIF(r.cikis_tarihi, ''),
-                            date(r.giris_tarihi, '+' || r.gece_sayisi || ' day'))) > date(?)
+        SELECT ro.id as ro_id, ro.rezervasyon_id, r.ad_soyad, ro.giris_tarihi, ro.gece_sayisi,
+               o.oda_no, o.kat_adi
+        FROM rezervasyon_odalar ro
+        JOIN rezervasyonlar r ON ro.rezervasyon_id = r.id
+        JOIN odalar o ON ro.oda_id = o.id
+        WHERE ro.oda_id = ? AND r.iptal = 0
+          AND date(ro.giris_tarihi) < date(?, '+' || ? || ' day')
+          AND date(COALESCE(NULLIF(ro.cikis_tarihi, ''),
+                            date(ro.giris_tarihi, '+' || ro.gece_sayisi || ' day'))) > date(?)
     """
     params = [oda_id, giris_tarihi, gece_sayisi, giris_tarihi]
     if haric_rez_id:
-        q += " AND r.id != ?"
+        q += " AND ro.rezervasyon_id != ?"
         params.append(haric_rez_id)
+    if haric_ro_id:
+        q += " AND ro.id != ?"
+        params.append(haric_ro_id)
     return cur.execute(q, params).fetchall()
 
 
-# ---------------- ODA DEĞİŞTİRME PARÇALARI / ÖDEME YENİDEN KURMA ----------------
-
-def _odemeleri_yeniden_kur(cur, rez, yeni_giris_tarihi, yeni_gece_sayisi):
-    """Bir rezervasyonun ödemelerini yeni tarih aralığına göre yeniden kurar.
-    Aynı tarihli eski ödemenin ödendi/ödem şekli/notu korunur; kapsam dışı kalan
-    ÖDENMİŞ gecelerin tarihleri döndürülür (UI bu listeyi kullanıcıya gösterir)."""
-    mevcut = cur.execute(
-        "SELECT * FROM odemeler WHERE rezervasyon_id=? ORDER BY tarih", (rez["id"],)
-    ).fetchall()
-    yeni_set = set(g.isoformat() for g in _tarih_araligi(yeni_giris_tarihi, yeni_gece_sayisi))
-    dusen_odenmis = []
-    for o in mevcut:
-        if o["odendi"] and o["tarih"] not in yeni_set:
-            dusen_odenmis.append(o["tarih"])
-    dusen_odenmis.sort()
-
-    cur.execute("DELETE FROM odemeler WHERE rezervasyon_id=?", (rez["id"],))
-    toplam = (rez["gecelik_ucret"] or 0) * (rez["kisi_sayisi"] or 1)
-    for gun in _tarih_araligi(yeni_giris_tarihi, yeni_gece_sayisi):
-        gun_str = gun.isoformat()
-        eski = next((o for o in mevcut if o["tarih"] == gun_str), None)
-        if eski is not None:
-            cur.execute(
-                "INSERT INTO odemeler (rezervasyon_id, tarih, tutar, odendi, odeme_sekli, odeme_notu) "
-                "VALUES (?,?,?,?,?,?)",
-                (rez["id"], gun_str, eski["tutar"] or toplam,
-                 eski["odendi"], eski["odeme_sekli"], eski["odeme_notu"]),
-            )
-        else:
-            cur.execute(
-                "INSERT INTO odemeler (rezervasyon_id, tarih, tutar, odendi) VALUES (?,?,?,0)",
-                (rez["id"], gun_str, toplam),
-            )
-    return dusen_odenmis
+def musaitlik_kontrol(oda_id, giris_tarihi, gece_sayisi, haric_rez_id=None, haric_ro_id=None):
+    """Seçilen oda, tarih aralığında dolu mu diye kontrol eder."""
+    conn = get_connection()
+    try:
+        return _musaitlik_sorgusu(conn.cursor(), oda_id, giris_tarihi, gece_sayisi,
+                                  haric_rez_id=haric_rez_id, haric_ro_id=haric_ro_id)
+    finally:
+        conn.close()
 
 
-def _oda_degistirme_devami(cur, rez):
-    """Rez, 'Oda Değiştir' ile ortadan bölünmüş bir rezervasyonun İLK parçasıysa
-    devam (ikinci parça) rezervasyonunu döndürür."""
-    rows = cur.execute(
-        "SELECT r.* FROM rezervasyonlar r "
-        "WHERE r.iptal=0 AND r.id!=? AND r.ad_soyad=? AND r.giris_tarihi>?"
-        "  AND r.notlar LIKE ?",
-        (rez["id"], rez["ad_soyad"], rez["giris_tarihi"],
-         f"%Oda değişikliği: önceki oda ID {rez['oda_id']}%"),
-    ).fetchall()
-    if not rows:
-        return None
-    for r in rows:
-        if r["grup_id"] and rez["grup_id"] and r["grup_id"] != rez["grup_id"]:
-            continue
-        return r
-    return None
+# ---------------- REZERVASYON (UST TABLO) ----------------
 
+def rezervasyon_olustur(odalar, ad_soyad, tc_no="", telefon="", referans="", notlar="",
+                        olusturan_kullanici=None, gecmis_kontrol=True):
+    """ÇOK ODALI rezervasyon oluşturur.
 
-def _oda_degistirme_oncesi(cur, rez):
-    """Rez bir oda-değiştirme DEĞİŞİMİ (ikinci parça) ise ilk parçasını döndürür."""
-    m = re.search(r"önceki oda ID (\d+)", rez["notlar"] or "")
-    if not m:
-        return None
-    onceki_oda_id = int(m.group(1))
-    rows = cur.execute(
-        "SELECT r.* FROM rezervasyonlar r "
-        "WHERE r.iptal=0 AND r.id!=? AND r.ad_soyad=? AND r.oda_id=? AND r.giris_tarihi<?"
-        "  AND r.notlar NOT LIKE '%Oda değişikliği%'"
-        " ORDER BY r.giris_tarihi DESC LIMIT 1",
-        (rez["id"], rez["ad_soyad"], onceki_oda_id, rez["giris_tarihi"]),
-    ).fetchall()
-    if not rows:
-        return None
-    r = rows[0]
-    if r["grup_id"] and rez["grup_id"] and r["grup_id"] != rez["grup_id"]:
-        return None
-    return r
+    odalar: her biri bir oda satirini temsil eden dict (veya dict destekli) listesi:
+        {oda_id, giris_tarihi, gece_sayisi, kisi_sayisi, fiyat_tipi, ozel_ucret}
+    Tek elemanli liste tek odali rezervasyon demektir.
 
+    GÜVENLİK: Kapasite, tarih çakışması, oda durumu (temizlikte/arızalı) ve geçmiş
+    tarih burada da kontrol edilir (tek savunma hattı UI değil, DB katmanı da reddeder).
 
-def rezervasyon_olustur(oda_id, ad_soyad, tc_no, telefon, kisi_sayisi,
-                         giris_tarihi, gece_sayisi, fiyat_tipi, referans="", notlar="",
-                         grup_id=None, olusturan_kullanici=None, ozel_ucret=None,
-                         gecmis_kontrol=True):
-    """gecelik_ucret KİŞİ BAŞI tutardır (600 Üye / 1300 Sabit). Her gecenin toplam
-    tutarı = gecelik_ucret * kisi_sayisi olarak hesaplanır (odalara göre değil,
-    kişi sayısına göre fiyatlandırma).
-    fiyat_tipi 'Ozel' ise gecelik_ucret ozel_ucret parametresinden alınır.
-    gecmis_kontrol=True iken gecmis tarihe rezervasyon engellenir.
-    GÜVENLİK: Kapasite, tarih çakışması, oda durumu (temizlikte/arızalı) ve
-    geçmiş tarih burada da kontrol edilir (tek savunma hattı UI değil,
-    veritabanı katmanı da reddeder)."""
-    if gecmis_kontrol and giris_tarihi < date.today().isoformat():
-        raise ValueError("Geçmiş tarihe rezervasyon alınamaz.")
+    Döner: rez_id"""
+    if not odalar:
+        raise ValueError("En az bir oda seçilmelidir.")
+    bugun = date.today().isoformat()
+    for r in odalar:
+        if gecmis_kontrol and r["giris_tarihi"] < bugun:
+            raise ValueError("Geçmiş tarihe rezervasyon alınamaz.")
+
     conn = get_connection()
     try:
         cur = conn.cursor()
-        oda = _oda_durumu_sorgula(cur, oda_id)
-        kapasite = oda["kapasite"] or 1
-        if kisi_sayisi > kapasite:
-            raise ValueError(f"Bu oda en fazla {kapasite} kişi alabilir, {kisi_sayisi} kişi girildi.")
 
-        cakisma = _musaitlik_sorgusu(cur, oda_id, giris_tarihi, gece_sayisi)
-        if cakisma:
-            isimler = ", ".join(c["ad_soyad"] for c in cakisma)
-            raise ValueError(f"Oda bu tarihlerde dolu: {isimler}.")
-
-        ucret = gecelik_fiyat(fiyat_tipi, ozel_ucret)
-        if fiyat_tipi == "Ozel" and ucret <= 0:
-            raise ValueError("Özel fiyat için geçerli bir tutar girilmelidir.")
+        # 1) Ust tablo
         cur.execute("""
-            INSERT INTO rezervasyonlar
-            (oda_id, ad_soyad, tc_no, telefon, kisi_sayisi, giris_tarihi,
-             gece_sayisi, fiyat_tipi, gecelik_ucret, referans, notlar, grup_id, olusturan_kullanici)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
-        """, (oda_id, ad_soyad, tc_no, telefon, kisi_sayisi, giris_tarihi,
-              gece_sayisi, fiyat_tipi, ucret, referans, notlar, grup_id, olusturan_kullanici))
+            INSERT INTO rezervasyonlar (ad_soyad, tc_no, telefon, referans, notlar, olusturan_kullanici)
+            VALUES (?,?,?,?,?,?)
+        """, (ad_soyad, tc_no, telefon, referans, notlar, olusturan_kullanici))
         rez_id = cur.lastrowid
 
-        gecelik_toplam = ucret * kisi_sayisi
-        for gun in _tarih_araligi(giris_tarihi, gece_sayisi):
+        # 2) Her oda satiri + odemeler
+        for r in odalar:
+            oda = _oda_durumu_sorgula(cur, r["oda_id"])
+            kapasite = oda["kapasite"] or 1
+            if r["kisi_sayisi"] > kapasite:
+                raise ValueError(f"Oda {oda['oda_no']} en fazla {kapasite} kişi alabilir, {r['kisi_sayisi']} kişi girildi.")
+
+            cakisma = _musaitlik_sorgusu(cur, r["oda_id"], r["giris_tarihi"], r["gece_sayisi"])
+            if cakisma:
+                isimler = ", ".join(c["ad_soyad"] for c in cakisma)
+                raise ValueError(f"Oda {oda['oda_no']} bu tarihlerde dolu: {isimler}.")
+
+            ucret = gecelik_fiyat(r["fiyat_tipi"], r.get("ozel_ucret"))
+            if r["fiyat_tipi"] == "Ozel" and ucret <= 0:
+                raise ValueError("Özel fiyat için geçerli bir tutar girilmelidir.")
+
             cur.execute("""
-                INSERT INTO odemeler (rezervasyon_id, tarih, tutar, odendi)
-                VALUES (?,?,?,0)
-            """, (rez_id, gun.isoformat(), gecelik_toplam))
+                INSERT INTO rezervasyon_odalar
+                (rezervasyon_id, oda_id, giris_tarihi, gece_sayisi, kisi_sayisi, fiyat_tipi, gecelik_ucret)
+                VALUES (?,?,?,?,?,?,?)
+            """, (rez_id, r["oda_id"], r["giris_tarihi"], r["gece_sayisi"],
+                  r["kisi_sayisi"], r["fiyat_tipi"], ucret))
+            ro_id = cur.lastrowid
+
+            gecelik_toplam = ucret * r["kisi_sayisi"]
+            for gun in _tarih_araligi(r["giris_tarihi"], r["gece_sayisi"]):
+                cur.execute("""
+                    INSERT INTO odemeler (rezervasyon_oda_id, tarih, tutar, odendi)
+                    VALUES (?,?,?,0)
+                """, (ro_id, gun.isoformat(), gecelik_toplam))
 
         conn.commit()
+        odalar_metni = _oda_ozeti([
+            f"{oda_getir_ozet_adi(r['oda_id'])}" for r in odalar
+        ])
         loglama.islem_yaz(
             "rezervasyon_olustur",
-            f"{ad_soyad} - {oda['kat_adi']} Oda {oda['oda_no']} ({giris_tarihi}, {gece_sayisi} gece, {kisi_sayisi} kişi, {ucret} TL/kişi/gece)",
+            f"{ad_soyad} - {len(odalar)} oda ({odalar_metni}) rezervasyonu oluşturuldu.",
             kullanici=olusturan_kullanici,
         )
         return rez_id
@@ -392,66 +381,43 @@ def rezervasyon_olustur(oda_id, ad_soyad, tc_no, telefon, kisi_sayisi,
         conn.close()
 
 
-def rezervasyonlari_toplu_olustur(rezervasyon_listesi):
-    """Birden fazla rezervasyonu tek transaction içinde oluşturur (grup rezervasyonu).
-    rezervasyon_listesi: her biri rezervasyon_olustur parametrelerini içeren dict listesi.
-    Hepsi başarılı olursa commit, herhangi biri hata verirse tamamı geri alınır (atomik)."""
-    if not rezervasyon_listesi:
-        return []
-    bugun = date.today().isoformat()
-    for r in rezervasyon_listesi:
-        if r.get("gecmis_kontrol", True) and r["giris_tarihi"] < bugun:
-            raise ValueError("Geçmiş tarihe rezervasyon alınamaz.")
+def oda_getir_ozet_adi(oda_id):
+    """Tek oda icin 'Kat - Oda X' etiketi (loglama/ozet icin)."""
+    conn = get_connection()
+    try:
+        o = conn.execute("SELECT kat_adi, oda_no FROM odalar WHERE id=?", (oda_id,)).fetchone()
+        return f"{o['kat_adi']} - Oda {o['oda_no']}" if o else f"Oda ID {oda_id}"
+    finally:
+        conn.close()
+
+
+def rezervasyon_getir(rez_id):
+    """Rezervasyon (ust) satirini dondurur. Iptal durumu dahil tüm üst alanlar."""
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            "SELECT * FROM rezervasyonlar WHERE id=?", (rez_id,)
+        ).fetchone()
+        return row
+    finally:
+        conn.close()
+
+
+def rezervasyon_guncelle(rez_id, ad_soyad, tc_no, telefon, referans, notlar):
+    """Üst tablodaki iletişim bilgilerini günceller (oda satirlari etkilenmez)."""
     conn = get_connection()
     try:
         cur = conn.cursor()
-        olusturulan_ids = []
-        for r in rezervasyon_listesi:
-            oda_id = r["oda_id"]
-            kisi_sayisi = r["kisi_sayisi"]
-            giris_tarihi = r["giris_tarihi"]
-            gece_sayisi = r["gece_sayisi"]
-
-            oda = _oda_durumu_sorgula(cur, oda_id)
-            kapasite = oda["kapasite"] or 1
-            if kisi_sayisi > kapasite:
-                raise ValueError(f"Oda {oda['oda_no']} en fazla {kapasite} kişi alabilir, {kisi_sayisi} girildi.")
-
-            cakisma = _musaitlik_sorgusu(cur, oda_id, giris_tarihi, gece_sayisi)
-            if cakisma:
-                isimler = ", ".join(c["ad_soyad"] for c in cakisma)
-                raise ValueError(f"Oda {oda['oda_no']} bu tarihlerde dolu: {isimler}.")
-
-            ucret = gecelik_fiyat(r["fiyat_tipi"], r.get("ozel_ucret"))
-            if r["fiyat_tipi"] == "Ozel" and ucret <= 0:
-                raise ValueError("Özel fiyat için geçerli bir tutar girilmelidir.")
-            cur.execute("""
-                INSERT INTO rezervasyonlar
-                (oda_id, ad_soyad, tc_no, telefon, kisi_sayisi, giris_tarihi,
-                 gece_sayisi, fiyat_tipi, gecelik_ucret, referans, notlar, grup_id, olusturan_kullanici)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
-            """, (oda_id, r["ad_soyad"], r.get("tc_no", ""), r.get("telefon", ""),
-                  kisi_sayisi, giris_tarihi, gece_sayisi, r["fiyat_tipi"],
-                  ucret, r.get("referans", ""), r.get("notlar", ""),
-                  r.get("grup_id"), r.get("olusturan_kullanici")))
-            rez_id = cur.lastrowid
-            olusturulan_ids.append(rez_id)
-
-            gecelik_toplam = ucret * kisi_sayisi
-            for gun in _tarih_araligi(giris_tarihi, gece_sayisi):
-                cur.execute("""
-                    INSERT INTO odemeler (rezervasyon_id, tarih, tutar, odendi)
-                    VALUES (?,?,?,0)
-                """, (rez_id, gun.isoformat(), gecelik_toplam))
-
+        row = cur.execute("SELECT id FROM rezervasyonlar WHERE id=?", (rez_id,)).fetchone()
+        if not row:
+            raise ValueError("Rezervasyon bulunamadı.")
+        cur.execute("""
+            UPDATE rezervasyonlar
+            SET ad_soyad=?, tc_no=?, telefon=?, referans=?, notlar=?
+            WHERE id=?
+        """, (ad_soyad, tc_no, telefon, referans, notlar, rez_id))
         conn.commit()
-        for r in rezervasyon_listesi:
-            loglama.islem_yaz(
-                "rezervasyon_olustur",
-                f"{r['ad_soyad']} - Oda ID {r['oda_id']} ({r['giris_tarihi']}, {r['gece_sayisi']} gece)",
-                kullanici=r.get("olusturan_kullanici"),
-            )
-        return olusturulan_ids
+        loglama.islem_yaz("rezervasyon_guncelle", f"Rezervasyon #{rez_id} bilgileri güncellendi: {ad_soyad}.")
     except Exception:
         conn.rollback()
         raise
@@ -460,18 +426,15 @@ def rezervasyonlari_toplu_olustur(rezervasyon_listesi):
 
 
 def rezervasyon_iptal(rez_id):
-    """Müşteri tarafından iptal edilen rezervasyonu işaretler."""
+    """Müşteri tarafından iptal edilen rezervasyonu işaretler (tüm odalarıyla)."""
     conn = get_connection()
     try:
         cur = conn.cursor()
-        rez = cur.execute(
-            "SELECT r.*, o.oda_no, o.kat_adi FROM rezervasyonlar r JOIN odalar o ON r.oda_id=o.id WHERE r.id=?",
-            (rez_id,),
-        ).fetchone()
+        rez = cur.execute("SELECT * FROM rezervasyonlar WHERE id=?", (rez_id,)).fetchone()
         if rez:
             cur.execute("UPDATE rezervasyonlar SET iptal=1 WHERE id=?", (rez_id,))
             conn.commit()
-            loglama.islem_yaz("rezervasyon_iptal", f"{rez['ad_soyad']} - {rez['kat_adi']} Oda {rez['oda_no']} rezervasyonu iptal edildi.")
+            loglama.islem_yaz("rezervasyon_iptal", f"{rez['ad_soyad']} rezervasyonu (#{rez_id}) iptal edildi.")
     except Exception:
         conn.rollback()
         raise
@@ -483,14 +446,11 @@ def rezervasyon_iptal_geri_al(rez_id):
     conn = get_connection()
     try:
         cur = conn.cursor()
-        rez = cur.execute(
-            "SELECT r.*, o.oda_no, o.kat_adi FROM rezervasyonlar r JOIN odalar o ON r.oda_id=o.id WHERE r.id=?",
-            (rez_id,),
-        ).fetchone()
+        rez = cur.execute("SELECT * FROM rezervasyonlar WHERE id=?", (rez_id,)).fetchone()
         if rez:
             cur.execute("UPDATE rezervasyonlar SET iptal=0 WHERE id=?", (rez_id,))
             conn.commit()
-            loglama.islem_yaz("rezervasyon_iptal", f"{rez['ad_soyad']} - Oda {rez['oda_no']} rezervasyonunun iptali geri alındı.")
+            loglama.islem_yaz("rezervasyon_iptal", f"{rez['ad_soyad']} rezervasyonunun (#{rez_id}) iptali geri alındı.")
     except Exception:
         conn.rollback()
         raise
@@ -498,132 +458,273 @@ def rezervasyon_iptal_geri_al(rez_id):
         conn.close()
 
 
-def rezervasyon_getir(rez_id):
+# ---------------- REZERVASYON ODALARI (ALBERIM) ----------------
+
+def rezervasyon_odalar_listele(rez_id):
+    """Bir rezervasyonun tüm oda satirlarini oda ve üst rezervasyon bilgileriyle döndürür."""
+    conn = get_connection()
+    try:
+        rows = conn.execute("""
+            SELECT ro.*, o.oda_no, o.kat_adi, o.oda_tipi, o.kapasite, o.eski_no,
+                   r.id as rez_id, r.ad_soyad, r.telefon, r.tc_no, r.referans,
+                   r.notlar, r.iptal, r.olusturan_kullanici
+            FROM rezervasyon_odalar ro
+            JOIN odalar o ON ro.oda_id = o.id
+            JOIN rezervasyonlar r ON r.id = ro.rezervasyon_id
+            WHERE ro.rezervasyon_id = ?
+            ORDER BY o.kat_no, o.oda_no
+        """, (rez_id,)).fetchall()
+        return rows
+    finally:
+        conn.close()
+
+
+def rezervasyon_odasi_getir(ro_id):
+    """Tek oda satiri + oda ve üst rezervasyon bilgileri."""
     conn = get_connection()
     try:
         row = conn.execute("""
-            SELECT r.*, o.oda_no, o.kat_adi, o.oda_tipi, o.kapasite
-            FROM rezervasyonlar r JOIN odalar o ON r.oda_id = o.id
-            WHERE r.id = ?
-        """, (rez_id,)).fetchone()
+            SELECT ro.*, o.oda_no, o.kat_adi, o.oda_tipi, o.kapasite, o.eski_no,
+                   r.ad_soyad, r.tc_no, r.telefon, r.referans, r.notlar, r.iptal,
+                   r.olusturan_kullanici, r.olusturma_tarihi, r.id as rez_id
+            FROM rezervasyon_odalar ro
+            JOIN odalar o ON ro.oda_id = o.id
+            JOIN rezervasyonlar r ON ro.rezervasyon_id = r.id
+            WHERE ro.id = ?
+        """, (ro_id,)).fetchone()
         return row
     finally:
         conn.close()
 
 
-def rezervasyon_guncelle(rez_id, ad_soyad, tc_no, telefon, kisi_sayisi, referans, notlar):
-    """Misafir bilgilerini günceller. Kapasite aşımı burada da engellenir."""
+def rezervasyon_listesi(durum="aktif"):
+    """durum: 'aktif', 'iptal', 'gecmis' veya 'hepsi'.
+    ANA SAYFA ICIN: her rezervasyon TEK SATIR olarak, odalari ozetlenmis halde.
+    'gecmis' = iptal edilmemiş ve tüm odaları çıkış yapmış (eski misafirler)."""
     conn = get_connection()
     try:
-        cur = conn.cursor()
-        row = cur.execute("SELECT oda_id FROM rezervasyonlar WHERE id=?", (rez_id,)).fetchone()
-        if row:
-            oda = cur.execute("SELECT kapasite FROM odalar WHERE id=?", (row["oda_id"],)).fetchone()
-            kapasite = (oda["kapasite"] if oda else None) or 1
-            liman = max(kapasite + 2, 3)
-            if kisi_sayisi > liman:
-                raise ValueError(f"Bu oda için en fazla {liman} kişi saklanabilir, {kisi_sayisi} kişi girildi.")
-        cur.execute("""
-            UPDATE rezervasyonlar
-            SET ad_soyad=?, tc_no=?, telefon=?, kisi_sayisi=?, referans=?, notlar=?
-            WHERE id=?
-        """, (ad_soyad, tc_no, telefon, kisi_sayisi, referans, notlar, rez_id))
-        # Odeme tutarlarini da senkronize et (kapasite kontrolu icerde yapilir)
-        # Burada dogrudan odemeleri guncellemeyelim; cagiran taraf kisi_sayisi_senkronla cagiracak
-        conn.commit()
-        loglama.islem_yaz("rezervasyon_guncelle", f"Rezervasyon #{rez_id} bilgileri güncellendi: {ad_soyad} ({kisi_sayisi} kişi).")
-    except Exception:
-        conn.rollback()
-        raise
+        q = """
+            SELECT r.id, r.ad_soyad, r.tc_no, r.telefon, r.referans, r.notlar,
+                   r.olusturan_kullanici, r.iptal,
+                   substr(r.olusturma_tarihi, 1, 16) as olusturma_tarihi,
+                   COUNT(ro.id) as oda_sayisi,
+                   COALESCE(SUM(ro.kisi_sayisi), 0) as toplam_kisi,
+                   COALESCE(SUM(ro.gece_sayisi), 0) as toplam_gece,
+                   MIN(ro.giris_tarihi) as giris_tarihi,
+                   MAX(COALESCE(NULLIF(ro.cikis_tarihi, ''),
+                                date(ro.giris_tarihi, '+' || ro.gece_sayisi || ' day'))) as cikis_tarihi,
+                   GROUP_CONCAT(o.kat_adi || '-' || o.oda_no, ' + ') as oda_ozeti,
+                   SUM(CASE WHEN ro.checkin_yapildi=1 THEN 1 ELSE 0 END) as checkin_odasi,
+                   SUM(CASE WHEN ro.checkin_yapildi=0 AND ro.giris_tarihi < date('now') THEN 1 ELSE 0 END) as gelmedi_odasi,
+                   SUM(CASE WHEN ro.cikis_tarihi IS NULL OR ro.cikis_tarihi='' THEN 1 ELSE 0 END) as acik_odasi,
+                   SUM(CASE WHEN ro.gece_sayisi = 0 THEN 1 ELSE 0 END) as sifir_gece
+            FROM rezervasyonlar r
+            LEFT JOIN rezervasyon_odalar ro ON ro.rezervasyon_id = r.id
+            LEFT JOIN odalar o ON o.id = ro.oda_id
+        """
+        if durum == "aktif":
+            q += " WHERE r.iptal = 0"
+        elif durum == "iptal":
+            q += " WHERE r.iptal = 1"
+        elif durum == "gecmis":
+            q += " WHERE r.iptal = 0"
+        q += " GROUP BY r.id"
+        if durum == "gecmis":
+            q += " HAVING acik_odasi = 0 AND oda_sayisi > 0"
+        q += " ORDER BY giris_tarihi DESC"
+        rows = conn.execute(q).fetchall()
+        sonuc = []
+        bugun = date.today().isoformat()
+        for r in rows:
+            d = dict(r)
+            d["oda_ozeti"] = _oda_ozeti([x.strip() for x in (r["oda_ozeti"] or "").split("+")])
+            d["durum_etiket"] = rezervasyon_durum_etiketi(d, bugun)
+            sonuc.append(d)
+        return sonuc
     finally:
         conn.close()
 
 
-def kisi_sayisi_senkronla(rez_id, yeni_kisi_sayisi, ekstra_yatak=False):
-    """Kişi sayısı değiştiğinde kisi_sayisi'nı günceller ve HENÜZ ÖDENMEMİŞ
-    gecelerin tutarını yeniden hesaplar. Kapasite aşımı sert engel değildir:
-    resmî kapasitenin +2 fazlasına kadar kayıt kabul edilir (misafir kaydı,
-    check-in günü ekstra kişi vb.); ekstra_yatak=True ise +1 daha fazla."""
+def rezervasyon_durum_etiketi(d, bugun_str=None):
+    """Rezervasyon satirinin durum etiketini hesaplar (inceleme için):
+    iptal / no-show (tüm odalar gelmedi) / kısmen gelmedi / bekleniyor / aktif."""
+    if bugun_str is None:
+        bugun_str = date.today().isoformat()
+    if d["iptal"]:
+        return "İptal Edildi"
+    oda_sayisi = d["oda_sayisi"] or 0
+    if oda_sayisi == 0:
+        return "Odasız"
+    checkin = d["checkin_odasi"] or 0
+    gelmedi = d["gelmedi_odasi"] or 0
+    if checkin == oda_sayisi:
+        return "Check-in Oldu"
+    if checkin > 0:
+        return f"Kısmen ({checkin}/{oda_sayisi})"
+    # hicbir oda check-in degil
+    if gelmedi == oda_sayisi:
+        return "Gelmedi (No-Show)"
+    if d["giris_tarihi"] and d["giris_tarihi"] <= bugun_str:
+        return "Bekleniyor"
+    return "İleri Tarih"
+
+
+def tum_rezervasyonlar():
+    """Geriye uyumluluk için: sadece aktif rezervasyonlar."""
+    return rezervasyon_listesi("aktif")
+
+
+def rezervasyon_toplami(rez_id):
+    """Rezervasyonun tüm odalarının, tüm gecelerin toplam tutarı."""
     conn = get_connection()
     try:
-        cur = conn.cursor()
-        rez = cur.execute("SELECT oda_id, gecelik_ucret FROM rezervasyonlar WHERE id=?", (rez_id,)).fetchone()
-        if not rez:
-            return
-        oda = cur.execute("SELECT kapasite FROM odalar WHERE id=?", (rez["oda_id"],)).fetchone()
-        kapasite = (oda["kapasite"] if oda else None) or 1
-        liman = max(kapasite + 2, 3) + (1 if ekstra_yatak else 0)
-        if yeni_kisi_sayisi > liman:
-            raise ValueError(
-                f"Bu oda için en fazla {liman} kişi kaydedilebilir"
-                f"{' (ekstra yatak dahil)' if ekstra_yatak else ''}, {yeni_kisi_sayisi} girildi."
-            )
-        yeni_tutar = rez["gecelik_ucret"] * yeni_kisi_sayisi
-        cur.execute("UPDATE rezervasyonlar SET kisi_sayisi=? WHERE id=?", (yeni_kisi_sayisi, rez_id))
-        cur.execute(
-            "UPDATE odemeler SET tutar=? WHERE rezervasyon_id=? AND odendi=0",
-            (yeni_tutar, rez_id)
-        )
-        conn.commit()
-        loglama.islem_yaz("rezervasyon_guncelle", f"Rezervasyon #{rez_id} kişi sayısı {yeni_kisi_sayisi} olarak güncellendi.")
-        odeme_tutarlarini_guncelle(rez_id)
-    except Exception:
-        conn.rollback()
-        raise
+        rows = conn.execute("""
+            SELECT ro.*, o.oda_no, o.kat_adi
+            FROM rezervasyon_odalar ro JOIN odalar o ON o.id = ro.oda_id
+            WHERE ro.rezervasyon_id = ?
+        """, (rez_id,)).fetchall()
+        toplam = 0
+        for ro in rows:
+            toplam += odasi_gecelik_toplami(ro) * (ro["gece_sayisi"] or 1)
+        return toplam
     finally:
         conn.close()
 
 
-def rezervasyon_odemeleri(rez_id):
+def rezervasyonlari_toplam_ozeti(rez_ids):
+    """Birden çok rezervasyon için TEK sorguda fiyat tipi kümeleri ve toplam tutarlar.
+    Döndürür: {rez_id: {'fiyat_tipleri': {..}, 'toplam': int}}"""
+    if not rez_ids:
+        return {}
+    conn = get_connection()
+    try:
+        yer = ",".join("?" * len(rez_ids))
+        rows = conn.execute(f"""
+            SELECT ro.rezervasyon_id as rez_id, ro.gece_sayisi,
+                   ro.fiyat_tipi, ro.gecelik_ucret, ro.kisi_sayisi,
+                   COALESCE((SELECT SUM(m.gecelik_ucret) FROM misafirler m
+                             WHERE m.rezervasyon_oda_id = ro.id
+                               AND m.gecelik_ucret IS NOT NULL), 0) as misafir_toplam
+            FROM rezervasyon_odalar ro
+            WHERE ro.rezervasyon_id IN ({yer})
+        """, tuple(rez_ids)).fetchall()
+        sonuc = {}
+        for ro in rows:
+            kayit = sonuc.setdefault(ro["rez_id"], {"fiyat_tipleri": set(), "toplam": 0})
+            if ro["fiyat_tipi"]:
+                kayit["fiyat_tipleri"].add(ro["fiyat_tipi"])
+            tek_gece = ro["misafir_toplam"] or ((ro["gecelik_ucret"] or 0) * (ro["kisi_sayisi"] or 1))
+            kayit["toplam"] += tek_gece * (ro["gece_sayisi"] or 1)
+        return sonuc
+    finally:
+        conn.close()
+
+
+# ---------------- ODA SATIRI: KİŞİ / FİYAT / ÖDEME ----------------
+
+def _ro_liman(ro_row):
+    """Bir oda satirinin kabul edebilecegi maksimum kisi (+2 sabit, ekstra yatak haric)."""
+    kapasite = ro_row["kapasite"] if "kapasite" in ro_row else 1
+    return max(kapasite + 2, 3)
+
+
+def odasi_misafirler_listele(ro_id):
     conn = get_connection()
     try:
         rows = conn.execute(
-            "SELECT * FROM odemeler WHERE rezervasyon_id=? ORDER BY tarih", (rez_id,)
+            "SELECT * FROM misafirler WHERE rezervasyon_oda_id=? ORDER BY sira_no, id", (ro_id,)
         ).fetchall()
         return rows
     finally:
         conn.close()
 
 
-def rezervasyon_gecelik_toplami(rez_row):
-    """Bir rezervasyonun TÜM GECELER için değil, SİNGLE GECELİK toplamını döndürür:
-    kayıtlı kişilerin bireysel fiyatları varsa onların toplamı,
-    yoksa rezervasyonun (kisi_sayisi * gecelik_ucret) değeri kullanılır.
-    Üst seviye tutarların (Oda Durumu, Günün Girişleri, dışa aktarma)
-    HEP aynı mantıkla hesaplanması içindir."""
-    misafirler = misafirler_listele(rez_row["id"])
-    ucretler = [m["gecelik_ucret"] for m in misafirler if m["gecelik_ucret"]]
-    if ucretler:
-        return sum(ucretler)
-    return (rez_row["gecelik_ucret"] or 0) * (rez_row["kisi_sayisi"] or 1)
-
-
-def odeme_tutarlarini_guncelle(rez_id):
-    """Kişi bazlı fiyatları topluca HENÜZ ÖDENMEMİŞ gecelere işler.
-
-    Her gece tutarı = odada kalan her kişinin kendi gecelik ücretinin toplamı.
-    Misafir fiyatları yoksa (check-in yapılmadıysa) rezervasyonun kendi
-    gecelik_ucret * kisi_sayisi değerine geri döner."""
+def odasi_misafirleri_kaydet(ro_id, misafir_listesi, ekstra_yatak=False):
+    """misafir_listesi: [(ad_soyad, tc_no), ...]
+    veya 4 elemanli gelsede kişi başı fiyat bilgisi de saklanır:
+        [(ad_soyad, tc_no, fiyat_tipi, gecelik_ucret), ...]
+    Mevcut listeyi tamamen değiştirir, oda satirinin kisi_sayisi'nini senkronlar
+    ve henüz ödenmemiş gecelerin tutarini yeniden hesaplar."""
     conn = get_connection()
     try:
         cur = conn.cursor()
-        rez = cur.execute(
-            "SELECT kisi_sayisi, gecelik_ucret FROM rezervasyonlar WHERE id=?", (rez_id,)
+        ro = cur.execute(
+            "SELECT ro.*, o.kapasite FROM rezervasyon_odalar ro "
+            "JOIN odalar o ON o.id = ro.oda_id WHERE ro.id=?", (ro_id,)
         ).fetchone()
-        if not rez:
+        if not ro:
+            raise ValueError("Oda satırı bulunamadı.")
+        liman = max((ro["kapasite"] or 1) + 2, 3) + (1 if ekstra_yatak else 0)
+        if len(misafir_listesi) > liman:
+            raise ValueError(
+                f"Bu oda için en fazla {liman} kişi kaydedilebilir"
+                f"{' (ekstra yatak dahil)' if ekstra_yatak else ''}, {len(misafir_listesi)} girildi."
+            )
+        cur.execute("DELETE FROM misafirler WHERE rezervasyon_oda_id=?", (ro_id,))
+        for i, satir in enumerate(misafir_listesi, start=1):
+            ad_soyad = satir[0].strip()
+            if not ad_soyad:
+                raise ValueError("Misafir adı boş olamaz.")
+            tc_no = satir[1] if len(satir) > 1 else ""
+            fiyat_tipi = satir[2] if len(satir) > 2 else None
+            ucret = satir[3] if len(satir) > 3 else None
+            cur.execute(
+                "INSERT INTO misafirler (rezervasyon_oda_id, ad_soyad, tc_no, sira_no, fiyat_tipi, gecelik_ucret) "
+                "VALUES (?,?,?,?,?,?)",
+                (ro_id, ad_soyad, tc_no, i, fiyat_tipi, ucret)
+            )
+        yeni_kisi = max(len(misafir_listesi), 1)
+        cur.execute("UPDATE rezervasyon_odalar SET kisi_sayisi=? WHERE id=?", (yeni_kisi, ro_id))
+        conn.commit()
+        loglama.islem_yaz("misafir", f"Oda satırı #{ro_id} misafirleri kaydedildi ({len(misafir_listesi)} kişi).")
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+    odasi_odeme_tutarlari_guncelle(ro_id)
+
+
+def odasi_gecelik_toplami(ro_row):
+    """Bir oda satirinin SİNGLE GECELİK toplamını verir: kayıtlı kişilerin bireysel
+    fiyatları varsa onların toplamı, yoksa (kisi_sayisi * gecelik_ucret)."""
+    ro_id = ro_row["id"]
+    conn = get_connection()
+    try:
+        misafirler = conn.execute(
+            "SELECT gecelik_ucret FROM misafirler WHERE rezervasyon_oda_id=? ORDER BY sira_no, id",
+            (ro_id,),
+        ).fetchall()
+        ucretler = [m["gecelik_ucret"] for m in misafirler if m["gecelik_ucret"]]
+        if ucretler:
+            return sum(ucretler)
+    finally:
+        conn.close()
+    return (ro_row["gecelik_ucret"] or 0) * (ro_row["kisi_sayisi"] or 1)
+
+
+def odasi_odeme_tutarlari_guncelle(ro_id):
+    """Kişi bazlı fiyatları topluca HENÜZ ÖDENMEMİŞ gecelere işler."""
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        ro = cur.execute(
+            "SELECT kisi_sayisi, gecelik_ucret FROM rezervasyon_odalar WHERE id=?", (ro_id,)
+        ).fetchone()
+        if not ro:
             return
         misafirler = cur.execute(
-            "SELECT gecelik_ucret FROM misafirler WHERE rezervasyon_id=? ORDER BY sira_no, id",
-            (rez_id,),
+            "SELECT gecelik_ucret FROM misafirler WHERE rezervasyon_oda_id=? ORDER BY sira_no, id",
+            (ro_id,),
         ).fetchall()
         gercek_sayilar = [m["gecelik_ucret"] for m in misafirler if m["gecelik_ucret"]]
         if gercek_sayilar:
             gecelik_toplam = sum(gercek_sayilar)
         else:
-            gecelik_toplam = (rez["gecelik_ucret"] or 0) * (rez["kisi_sayisi"] or 1)
+            gecelik_toplam = (ro["gecelik_ucret"] or 0) * (ro["kisi_sayisi"] or 1)
         cur.execute(
-            "UPDATE odemeler SET tutar=? WHERE rezervasyon_id=? AND odendi=0",
-            (gecelik_toplam, rez_id),
+            "UPDATE odemeler SET tutar=? WHERE rezervasyon_oda_id=? AND odendi=0",
+            (gecelik_toplam, ro_id),
         )
         conn.commit()
     except Exception:
@@ -633,64 +734,35 @@ def odeme_tutarlarini_guncelle(rez_id):
         conn.close()
 
 
-# ---------------- MİSAFİRLER ----------------
-
-def misafirler_listele(rez_id):
+def odasi_odemeler(ro_id):
+    """Oda satirinin gece gece ödeme listesi (tarih sirali)."""
     conn = get_connection()
     try:
         rows = conn.execute(
-            "SELECT * FROM misafirler WHERE rezervasyon_id=? ORDER BY sira_no, id", (rez_id,)
+            "SELECT * FROM odemeler WHERE rezervasyon_oda_id=? ORDER BY tarih", (ro_id,)
         ).fetchall()
         return rows
     finally:
         conn.close()
 
 
-def misafirleri_kaydet(rez_id, misafir_listesi, ekstra_yatak=False):
-    """misafir_listesi: [(ad_soyad, tc_no), ...]
-    veya 4 elemanli gelsede kişi başı fiyat bilgisi de saklanır:
-        [(ad_soyad, tc_no, fiyat_tipi, gecelik_ucret), ...]
-    Mevcut listeyi tamamen değiştirir. Kayıt sayısı resmî kapasiteyi aşabilir
-    (+2); ekstra yatak işaretlenirse +1 daha fazlasına izin verilir."""
+def odeme_guncelle(odeme_id, odendi, odeme_sekli=None, odeme_notu=None):
     conn = get_connection()
     try:
         cur = conn.cursor()
-        cur.execute("DELETE FROM misafirler WHERE rezervasyon_id=?", (rez_id,))
-        for i, satir in enumerate(misafir_listesi, start=1):
-            ad_soyad = satir[0]
-            tc_no = satir[1] if len(satir) > 1 else ""
-            fiyat_tipi = satir[2] if len(satir) > 2 else None
-            ucret = satir[3] if len(satir) > 3 else None
-            cur.execute(
-                "INSERT INTO misafirler (rezervasyon_id, ad_soyad, tc_no, sira_no, fiyat_tipi, gecelik_ucret) "
-                "VALUES (?,?,?,?,?,?)",
-                (rez_id, ad_soyad, tc_no, i, fiyat_tipi, ucret)
-            )
-        conn.commit()
-    except Exception:
-        conn.rollback()
-        raise
-    finally:
-        conn.close()
-    yeni_kisi_sayisi = max(len(misafir_listesi), 1)
-    kisi_sayisi_senkronla(rez_id, yeni_kisi_sayisi, ekstra_yatak=ekstra_yatak)
-    odeme_tutarlarini_guncelle(rez_id)
-
-
-# ---------------- CHECK-IN ----------------
-
-def checkin_yap(rez_id):
-    conn = get_connection()
-    try:
-        cur = conn.cursor()
-        rez = cur.execute(
-            "SELECT r.*, o.oda_no, o.kat_adi FROM rezervasyonlar r JOIN odalar o ON r.oda_id=o.id WHERE r.id=?",
-            (rez_id,),
+        o = cur.execute(
+            "SELECT od.*, o2.oda_no, o2.kat_adi FROM odemeler od "
+            "JOIN rezervasyon_odalar ro ON od.rezervasyon_oda_id = ro.id "
+            "JOIN odalar o2 ON ro.oda_id = o2.id WHERE od.id=?",
+            (odeme_id,),
         ).fetchone()
-        cur.execute("UPDATE rezervasyonlar SET checkin_yapildi=1 WHERE id=?", (rez_id,))
+        cur.execute("""
+            UPDATE odemeler SET odendi=?, odeme_sekli=?, odeme_notu=? WHERE id=?
+        """, (1 if odendi else 0, odeme_sekli, odeme_notu, odeme_id))
         conn.commit()
-        if rez:
-            loglama.islem_yaz("checkin", f"{rez['ad_soyad']} check-in yaptı ({rez['kat_adi']} Oda {rez['oda_no']}).")
+        if o:
+            durum = "ödendi" if odendi else "ödendi değil"
+            loglama.islem_yaz("odeme", f"{o['kat_adi']} Oda {o['oda_no']}, {o['tarih']} gecesi {o['tutar']} TL: {durum}. Sekli: {odeme_sekli or 'Yok'}")
     except Exception:
         conn.rollback()
         raise
@@ -698,18 +770,22 @@ def checkin_yap(rez_id):
         conn.close()
 
 
-def checkin_geri_al(rez_id):
+# ---------------- CHECK-IN / ÇIKIS (ODA BAZLI) ----------------
+
+def odasi_checkin_yap(ro_id):
     conn = get_connection()
     try:
         cur = conn.cursor()
-        rez = cur.execute(
-            "SELECT r.*, o.oda_no, o.kat_adi FROM rezervasyonlar r JOIN odalar o ON r.oda_id=o.id WHERE r.id=?",
-            (rez_id,),
+        ro = cur.execute(
+            "SELECT ro.*, o.oda_no, o.kat_adi FROM rezervasyon_odalar ro "
+            "JOIN odalar o ON ro.oda_id=o.id WHERE ro.id=?",
+            (ro_id,),
         ).fetchone()
-        cur.execute("UPDATE rezervasyonlar SET checkin_yapildi=0 WHERE id=?", (rez_id,))
+        if not ro:
+            raise ValueError("Oda satırı bulunamadı.")
+        cur.execute("UPDATE rezervasyon_odalar SET checkin_yapildi=1 WHERE id=?", (ro_id,))
         conn.commit()
-        if rez:
-            loglama.islem_yaz("checkin", f"{rez['ad_soyad']} check-in iptal edildi ({rez['kat_adi']} Oda {rez['oda_no']}).")
+        loglama.islem_yaz("checkin", f"Oda {ro['kat_adi']} Oda {ro['oda_no']} (satır #{ro_id}) check-in yapıldı.")
     except Exception:
         conn.rollback()
         raise
@@ -717,34 +793,56 @@ def checkin_geri_al(rez_id):
         conn.close()
 
 
-def cikis_yap(rez_id, cikis_tarihi_str=None):
-    """Check-out: rezervasyonu cikis_tarihi ile isaretler ve odayi ayni gun
-    temizlenip yeni misafire hazir oldugu icin durumunu 'temiz' yapar."""
+def odasi_checkin_geri_al(ro_id):
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        ro = cur.execute(
+            "SELECT ro.*, o.oda_no, o.kat_adi FROM rezervasyon_odalar ro "
+            "JOIN odalar o ON ro.oda_id=o.id WHERE ro.id=?",
+            (ro_id,),
+        ).fetchone()
+        if not ro:
+            raise ValueError("Oda satırı bulunamadı.")
+        cur.execute("UPDATE rezervasyon_odalar SET checkin_yapildi=0 WHERE id=?", (ro_id,))
+        conn.commit()
+        loglama.islem_yaz("checkin", f"Oda {ro['kat_adi']} Oda {ro['oda_no']} (satır #{ro_id}) check-in iptal edildi.")
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def odasi_cikis_yap(ro_id, cikis_tarihi_str=None):
+    """Oda bazlı check-out: satirin cikis_tarihi'ni isaretler, odanin durumunu temiz yapar.
+    Diger odalari etkilemez (cok odali rezervasyonun tek odasi cikis yapabilir)."""
     tarih = cikis_tarihi_str or date.today().isoformat()
     conn = get_connection()
     try:
         cur = conn.cursor()
-        rez = cur.execute(
-            "SELECT r.*, o.oda_no, o.kat_adi, o.durum FROM rezervasyonlar r "
-            "JOIN odalar o ON r.oda_id=o.id WHERE r.id=? AND r.iptal=0",
-            (rez_id,),
+        ro = cur.execute(
+            "SELECT ro.*, o.oda_no, o.kat_adi, o.durum FROM rezervasyon_odalar ro "
+            "JOIN odalar o ON ro.oda_id=o.id WHERE ro.id=? AND ro.rezervasyon_id IN "
+            "(SELECT id FROM rezervasyonlar WHERE iptal=0)",
+            (ro_id,),
         ).fetchone()
-        if not rez:
-            raise ValueError("Çıkış yapılacak rezervasyon bulunamadı.")
-        if not rez["checkin_yapildi"]:
-            raise ValueError("Bu misafir check-in yapılmamış, çıkış işlemi uygulanamaz.")
+        if not ro:
+            raise ValueError("Çıkış yapılacak oda satırı bulunamadı.")
+        if not ro["checkin_yapildi"]:
+            raise ValueError("Bu oda check-in yapılmamış, çıkış işlemi uygulanamaz.")
         cur.execute(
-            "UPDATE rezervasyonlar SET cikis_tarihi=? WHERE id=?",
-            (tarih, rez_id),
+            "UPDATE rezervasyon_odalar SET cikis_tarihi=? WHERE id=?",
+            (tarih, ro_id),
         )
         cur.execute(
             "UPDATE odalar SET durum='temiz', ariza_bitis=NULL WHERE id=?",
-            (rez["oda_id"],),
+            (ro["oda_id"],),
         )
         conn.commit()
         loglama.islem_yaz(
             "cikis",
-            f"{rez['ad_soyad']} çıkış yaptı ({rez['kat_adi']} Oda {rez['oda_no']}, {tarih}). Oda temiz olarak işaretlendi.",
+            f"Oda {ro['kat_adi']} Oda {ro['oda_no']} (satır #{ro_id}) çıkış yaptı ({tarih}). Oda temiz olarak işaretlendi.",
         )
     except Exception:
         conn.rollback()
@@ -753,21 +851,44 @@ def cikis_yap(rez_id, cikis_tarihi_str=None):
         conn.close()
 
 
+def odasi_gelmedi_mi(ro_row, bugun_str=None):
+    """Oda satiri 'gelmedi' (no-show) sayilir mi?"""
+    if bugun_str is None:
+        bugun_str = date.today().isoformat()
+    iptal = ("iptal" in ro_row and ro_row["iptal"]) or 0
+    return (not iptal) and (not ro_row["checkin_yapildi"]) and (ro_row["giris_tarihi"] < bugun_str)
+
+
+def gelmedi_mi(rez_row, bugun_str=None):
+    """Geriye uyumluluk: ust rezervasyon no-show sayilir mi?
+    (tum odalari gelmedigi, yani hic oda check-in degil ve giris gecmisse)"""
+    if "checkin_yapildi" in rez_row and "giris_tarihi" in rez_row and "iptal" in rez_row:
+        if bugun_str is None:
+            bugun_str = date.today().isoformat()
+        return (not rez_row["iptal"]) and (not rez_row["checkin_yapildi"]) and (rez_row["giris_tarihi"] < bugun_str)
+    return False
+
+
+# ---------------- GÜNLÜK GÖRÜNÜMLER ----------------
+
 def gunun_checkin_durumu(tarih_str):
-    """Check-in ekranı için: her oda için o günkü durum + oda durumu (temiz/temizlikte/arızalı)."""
+    """Check-in ekranı için: her odanın o günkü durumu + o gün odayı tutan
+    rezervasyon_odalar satiri (varsa)."""
     conn = get_connection()
     try:
         bugun = date.today().isoformat()
         rows = conn.execute("""
             SELECT o.id as oda_id, o.oda_no, o.kat_adi, o.kat_no, o.oda_tipi, o.kapasite,
                    o.durum as oda_durum, o.ariza_bitis,
-                   r.id as rez_id, r.ad_soyad, r.telefon, r.kisi_sayisi, r.checkin_yapildi,
-                   r.giris_tarihi, r.gece_sayisi, r.referans
+                   ro.id as ro_id, r.id as rez_id, r.ad_soyad, r.telefon,
+                   ro.kisi_sayisi, ro.checkin_yapildi, ro.giris_tarihi, ro.gece_sayisi,
+                   r.referans, ro.fiyat_tipi
             FROM odalar o
-            LEFT JOIN rezervasyonlar r ON r.oda_id = o.id AND r.iptal = 0
-                   AND r.giris_tarihi <= ?
-                   AND date(COALESCE(NULLIF(r.cikis_tarihi, ''),
-                                     date(r.giris_tarihi, '+' || r.gece_sayisi || ' day'))) > ?
+            LEFT JOIN rezervasyon_odalar ro ON ro.oda_id = o.id
+                   AND ro.giris_tarihi <= ?
+                   AND date(COALESCE(NULLIF(ro.cikis_tarihi, ''),
+                                     date(ro.giris_tarihi, '+' || ro.gece_sayisi || ' day'))) > ?
+            LEFT JOIN rezervasyonlar r ON r.id = ro.rezervasyon_id AND r.iptal = 0
             WHERE o.aktif = 1
             ORDER BY o.kat_no, o.oda_no
         """, (tarih_str, tarih_str)).fetchall()
@@ -782,16 +903,18 @@ def gunun_checkin_durumu(tarih_str):
 
 
 def bugun_cikacaklar(tarih_str):
-    """O gün çıkış yapacak misafirler — sadece gerçekten check-in yapılmış olanlar
-    (no-show / gelmeyen rezervasyonlar çıkış listesinde gösterilmez)."""
+    """O gün çıkış yapacak oda satirlari — sadece gerçekten check-in yapılmış olanlar."""
     conn = get_connection()
     try:
         rows = conn.execute("""
-            SELECT r.*, o.oda_no, o.kat_adi
-            FROM rezervasyonlar r JOIN odalar o ON r.oda_id = o.id
-            WHERE r.iptal = 0
-              AND r.checkin_yapildi = 1
-              AND date(r.giris_tarihi, '+' || r.gece_sayisi || ' day') = date(?)
+            SELECT ro.*, o.oda_no, o.kat_adi, r.ad_soyad, r.telefon, r.referans,
+                   r.id as rez_id, r.tc_no
+            FROM rezervasyon_odalar ro
+            JOIN odalar o ON ro.oda_id = o.id
+            JOIN rezervasyonlar r ON r.id = ro.rezervasyon_id
+            WHERE r.iptal = 0 AND ro.checkin_yapildi = 1
+              AND ro.cikis_tarihi IS NULL
+              AND date(ro.giris_tarihi, '+' || ro.gece_sayisi || ' day') = date(?)
             ORDER BY o.kat_no, o.oda_no
         """, (tarih_str,)).fetchall()
         return rows
@@ -799,168 +922,17 @@ def bugun_cikacaklar(tarih_str):
         conn.close()
 
 
-def grup_rezervasyonlari(grup_id, haric_rez_id=None):
-    """Aynı rezervasyonda (grup) birlikte alınan diğer odaları getirir."""
-    if not grup_id:
-        return []
-    conn = get_connection()
-    try:
-        q = """
-            SELECT r.*, o.oda_no, o.kat_adi
-            FROM rezervasyonlar r JOIN odalar o ON r.oda_id = o.id
-            WHERE r.grup_id = ? AND r.iptal = 0
-        """
-        params = [grup_id]
-        if haric_rez_id:
-            q += " AND r.id != ?"
-            params.append(haric_rez_id)
-        rows = conn.execute(q, params).fetchall()
-        return rows
-    finally:
-        conn.close()
-
-
-def tum_rezervasyonlar():
-    """Geriye uyumluluk için: sadece aktif (iptal edilmemiş) rezervasyonlar."""
-    return rezervasyon_listesi("aktif")
-
-
-def rezervasyon_listesi(durum="aktif"):
-    """durum: 'aktif', 'iptal', veya 'hepsi'"""
-    conn = get_connection()
-    try:
-        q = """
-            SELECT r.*, o.oda_no, o.kat_adi, o.oda_tipi
-            FROM rezervasyonlar r JOIN odalar o ON r.oda_id = o.id
-        """
-        if durum == "aktif":
-            q += " WHERE r.iptal = 0"
-        elif durum == "iptal":
-            q += " WHERE r.iptal = 1"
-        q += " ORDER BY r.giris_tarihi DESC"
-        rows = conn.execute(q).fetchall()
-        return rows
-    finally:
-        conn.close()
-
-
-def cikis_tarihi_hesapla(giris_tarihi_str, gece_sayisi):
-    baslangic = datetime.strptime(giris_tarihi_str, "%Y-%m-%d").date()
-    return (baslangic + timedelta(days=gece_sayisi)).isoformat()
-
-
-def gelmedi_mi(rez_row, bugun_str=None):
-    """Bir rezervasyonun 'gelmedi' (no-show) sayılıp sayılmayacağını hesaplar."""
-    if bugun_str is None:
-        bugun_str = date.today().isoformat()
-    return (not rez_row["iptal"]) and (not rez_row["checkin_yapildi"]) and (rez_row["giris_tarihi"] < bugun_str)
-
-
-def oda_degistir(eski_rez_id, yeni_oda_id, degisim_tarihi):
-    """Bir rezervasyonu başka bir odaya taşır."""
-    conn = get_connection()
-    try:
-        cur = conn.cursor()
-        eski = cur.execute("SELECT * FROM rezervasyonlar WHERE id=?", (eski_rez_id,)).fetchone()
-        if not eski:
-            raise ValueError("Rezervasyon bulunamadı.")
-        yeni_oda = _oda_durumu_sorgula(cur, yeni_oda_id)
-        if eski["kisi_sayisi"] > (yeni_oda["kapasite"] or 1):
-            raise ValueError(f"Hedef oda en fazla {yeni_oda['kapasite'] or 1} kişi alabilir, rezervasyon {eski['kisi_sayisi']} kişi.")
-
-        giris = datetime.strptime(eski["giris_tarihi"], "%Y-%m-%d").date()
-        degisim = datetime.strptime(degisim_tarihi, "%Y-%m-%d").date()
-        gecirilen_gece = (degisim - giris).days
-
-        if gecirilen_gece <= 0:
-            cakisma = _musaitlik_sorgusu(cur, yeni_oda_id, eski["giris_tarihi"], eski["gece_sayisi"], haric_rez_id=eski_rez_id)
-            if cakisma:
-                isimler = ", ".join(c["ad_soyad"] for c in cakisma)
-                raise ValueError(f"Hedef oda istenen tarihlerde dolu: {isimler}.")
-            cur.execute("UPDATE rezervasyonlar SET oda_id=? WHERE id=?", (yeni_oda_id, eski_rez_id))
-            conn.commit()
-            loglama.islem_yaz("oda_degistir", f"{eski['ad_soyad']} rezervasyonu {yeni_oda['kat_adi']} Oda {yeni_oda['oda_no']} odasına taşındı (tüm rezervasyon).")
-            return eski_rez_id
-
-        if gecirilen_gece >= eski["gece_sayisi"]:
-            raise ValueError("Bu tarihte misafirin zaten çıkışı var, oda değişikliğine gerek yok.")
-
-        kalan_gece = eski["gece_sayisi"] - gecirilen_gece
-        cakisma = _musaitlik_sorgusu(cur, yeni_oda_id, degisim_tarihi, kalan_gece, haric_rez_id=eski_rez_id)
-        if cakisma:
-            isimler = ", ".join(c["ad_soyad"] for c in cakisma)
-            raise ValueError(f"Hedef oda bu tarihten sonra dolu: {isimler}.")
-
-        tasinacaklar = cur.execute(
-            "SELECT * FROM odemeler WHERE rezervasyon_id=? AND tarih>=?",
-            (eski_rez_id, degisim_tarihi)
-        ).fetchall()
-        odeme_haritasi = {o["tarih"]: o for o in tasinacaklar}
-
-        cur.execute("UPDATE rezervasyonlar SET gece_sayisi=? WHERE id=?", (gecirilen_gece, eski_rez_id))
-        cur.execute("DELETE FROM odemeler WHERE rezervasyon_id=? AND tarih>=?", (eski_rez_id, degisim_tarihi))
-
-        eski_notlar = eski["notlar"] or ""
-        yeni_notlar = f"{eski_notlar} [Oda değişikliği: önceki oda ID {eski['oda_id']}]".strip()
-        cur.execute("""
-            INSERT INTO rezervasyonlar
-            (oda_id, ad_soyad, tc_no, telefon, kisi_sayisi, giris_tarihi,
-             gece_sayisi, fiyat_tipi, gecelik_ucret, referans, notlar, grup_id, checkin_yapildi)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
-        """, (yeni_oda_id, eski["ad_soyad"], eski["tc_no"], eski["telefon"], eski["kisi_sayisi"],
-              degisim_tarihi, kalan_gece, eski["fiyat_tipi"], eski["gecelik_ucret"],
-              eski["referans"], yeni_notlar, eski["grup_id"], eski["checkin_yapildi"]))
-        yeni_rez_id = cur.lastrowid
-
-        misafirler = cur.execute(
-            "SELECT ad_soyad, tc_no, sira_no, fiyat_tipi, gecelik_ucret FROM misafirler WHERE rezervasyon_id=?",
-            (eski_rez_id,),
-        ).fetchall()
-        for m in misafirler:
-            cur.execute(
-                "INSERT INTO misafirler (rezervasyon_id, ad_soyad, tc_no, sira_no, fiyat_tipi, gecelik_ucret) "
-                "VALUES (?,?,?,?,?,?)",
-                (yeni_rez_id, m["ad_soyad"], m["tc_no"], m["sira_no"], m["fiyat_tipi"], m["gecelik_ucret"])
-            )
-
-        varsayilan_gecelik_toplam = eski["gecelik_ucret"] * eski["kisi_sayisi"]
-        for i in range(kalan_gece):
-            gun = (degisim + timedelta(days=i)).isoformat()
-            eski_odeme = odeme_haritasi.get(gun)
-            if eski_odeme:
-                odendi = eski_odeme["odendi"]
-                sekli = eski_odeme["odeme_sekli"]
-                tutar = eski_odeme["tutar"]
-            else:
-                odendi = 0
-                sekli = None
-                tutar = varsayilan_gecelik_toplam
-            cur.execute("""
-                INSERT INTO odemeler (rezervasyon_id, tarih, tutar, odendi, odeme_sekli)
-                VALUES (?,?,?,?,?)
-            """, (yeni_rez_id, gun, tutar, odendi, sekli))
-
-        conn.commit()
-        loglama.islem_yaz("oda_degistir", f"{eski['ad_soyad']} rezervasyonu {degisim_tarihi} itibariyle {yeni_oda['kat_adi']} Oda {yeni_oda['oda_no']} odasına taşındı.")
-        odeme_tutarlarini_guncelle(yeni_rez_id)
-        return yeni_rez_id
-    except Exception:
-        conn.rollback()
-        raise
-    finally:
-        conn.close()
-
-
-# ---------------- GÜNLÜK LİSTE / ODA DURUMU ----------------
-
 def gunun_girisleri(tarih_str):
-    """O gün check-in yapacak (ilk gecesi bu tarih olan) rezervasyonlar."""
+    """O gün check-in yapacak (ilk gecesi bu tarih olan) ODA SATIRLARI."""
     conn = get_connection()
     try:
         rows = conn.execute("""
-            SELECT r.*, o.oda_no, o.kat_adi
-            FROM rezervasyonlar r JOIN odalar o ON r.oda_id = o.id
-            WHERE r.giris_tarihi = ? AND r.iptal = 0
+            SELECT ro.*, o.oda_no, o.kat_adi, r.ad_soyad, r.telefon, r.referans, r.tc_no,
+                   r.id as rez_id, r.olusturan_kullanici
+            FROM rezervasyon_odalar ro
+            JOIN odalar o ON ro.oda_id = o.id
+            JOIN rezervasyonlar r ON r.id = ro.rezervasyon_id
+            WHERE ro.giris_tarihi = ? AND r.iptal = 0
             ORDER BY o.kat_no, o.oda_no
         """, (tarih_str,)).fetchall()
         return rows
@@ -969,25 +941,28 @@ def gunun_girisleri(tarih_str):
 
 
 def gunun_oda_durumu(tarih_str):
-    """Tüm odaların o günkü durumu: dolu/boş + o geceki ödeme durumu + oda durumu."""
+    """Tüm odaların o günkü durumu: o gün kalan oda satiri + o geceki ödeme durumu.
+    Cok odali rezervasyonlarda her oda KENDI satiriyla gorunur."""
     conn = get_connection()
     try:
         bugun = date.today().isoformat()
         rows = conn.execute("""
             SELECT o.id as oda_id, o.oda_no, o.kat_adi, o.kat_no, o.oda_tipi, o.kapasite,
                    o.durum as oda_durum, o.ariza_bitis,
-                   r.id as rez_id, r.ad_soyad, r.tc_no, r.telefon,
-                   r.kisi_sayisi, r.fiyat_tipi, r.checkin_yapildi, r.giris_tarihi, r.gece_sayisi,
+                   ro.id as ro_id, r.id as rez_id, r.ad_soyad, r.tc_no, r.telefon,
+                   ro.kisi_sayisi, ro.fiyat_tipi, ro.gecelik_ucret, ro.checkin_yapildi,
+                   ro.giris_tarihi, ro.gece_sayisi,
                    od.id as odeme_id, od.tutar, od.odendi, od.odeme_sekli, od.odeme_notu,
-                   CASE WHEN r.id IS NOT NULL THEN
-                       CAST(julianday(date(r.giris_tarihi, '+' || r.gece_sayisi || ' day')) - julianday(?) AS INTEGER)
+                   CASE WHEN ro.id IS NOT NULL THEN
+                       CAST(julianday(date(ro.giris_tarihi, '+' || ro.gece_sayisi || ' day')) - julianday(?) AS INTEGER)
                    ELSE NULL END as kalan_gece
             FROM odalar o
-            LEFT JOIN rezervasyonlar r ON r.oda_id = o.id AND r.iptal = 0
-                   AND r.giris_tarihi <= ?
-                   AND date(COALESCE(NULLIF(r.cikis_tarihi, ''),
-                                     date(r.giris_tarihi, '+' || r.gece_sayisi || ' day'))) > ?
-            LEFT JOIN odemeler od ON od.rezervasyon_id = r.id AND od.tarih = ?
+            LEFT JOIN rezervasyon_odalar ro ON ro.oda_id = o.id
+                   AND ro.giris_tarihi <= ?
+                   AND date(COALESCE(NULLIF(ro.cikis_tarihi, ''),
+                                     date(ro.giris_tarihi, '+' || ro.gece_sayisi || ' day'))) > ?
+            LEFT JOIN rezervasyonlar r ON r.id = ro.rezervasyon_id AND r.iptal = 0
+            LEFT JOIN odemeler od ON od.rezervasyon_oda_id = ro.id AND od.tarih = ?
             WHERE o.aktif = 1
             ORDER BY o.kat_no, o.oda_no
         """, (tarih_str, tarih_str, tarih_str, tarih_str)).fetchall()
@@ -1001,23 +976,126 @@ def gunun_oda_durumu(tarih_str):
         conn.close()
 
 
-def odeme_guncelle(odeme_id, odendi, odeme_sekli=None, odeme_notu=None):
+# ---------------- ODA DEĞİŞTİRME (ODA BAZLI) ----------------
+
+def oda_degistir(ro_id, yeni_oda_id, degisim_tarihi):
+    """Bir rezervasyonun TEK ODA SATIRINI başka bir odaya taşır.
+
+    - degisim_tarihi, giris tarihinden önce veya eşitse: tüm gece yeni odaya taşınır.
+    - degisim_tarihi girişin ortasindaysa: satır İKİYE ayrılır (aynı rezervasyon içinde):
+        eski satir kesime kadar kalir, ayni rezervasyona YENİ bir oda satiri eklenir.
+      Böylece rezervasyon yönetim sayfasında hâlâ tek satır görünür.
+    Döner: (ro_id, yeni_ro_id_veya_None)
+    """
+    if not degisim_tarihi:
+        degisim_tarihi = date.today().isoformat()
     conn = get_connection()
     try:
         cur = conn.cursor()
-        o = cur.execute(
-            "SELECT od.*, r.ad_soyad, o2.oda_no FROM odemeler od "
-            "JOIN rezervasyonlar r ON od.rezervasyon_id = r.id "
-            "JOIN odalar o2 ON r.oda_id = o2.id WHERE od.id=?",
-            (odeme_id,),
+        eski = cur.execute(
+            "SELECT ro.*, o.oda_no, o.kat_adi FROM rezervasyon_odalar ro "
+            "JOIN odalar o ON ro.oda_id=o.id WHERE ro.id=?", (ro_id,)
         ).fetchone()
+        if not eski:
+            raise ValueError("Oda satırı bulunamadı.")
+        ust = cur.execute(
+            "SELECT * FROM rezervasyonlar WHERE id=? AND iptal=0", (eski["rezervasyon_id"],)
+        ).fetchone()
+        if not ust:
+            raise ValueError("Rezervasyon bulunamadı veya iptal edilmiş.")
+
+        # Ayni rezervasyonun zaten bu hedef odada bir satiri varsa engelle
+        zaten_var = cur.execute(
+            "SELECT id FROM rezervasyon_odalar WHERE rezervasyon_id=? AND oda_id=? AND id != ?",
+            (eski["rezervasyon_id"], yeni_oda_id, ro_id),
+        ).fetchone()
+        if zaten_var:
+            raise ValueError("Bu rezervasyonun hedef odada zaten bir satırı var.")
+
+        yeni_oda = _oda_durumu_sorgula(cur, yeni_oda_id)
+        if eski["kisi_sayisi"] > (yeni_oda["kapasite"] or 1):
+            raise ValueError(f"Hedef oda en fazla {yeni_oda['kapasite'] or 1} kişi alabilir, satır {eski['kisi_sayisi']} kişi.")
+
+        giris = datetime.strptime(eski["giris_tarihi"], "%Y-%m-%d").date()
+        degisim = datetime.strptime(degisim_tarihi, "%Y-%m-%d").date()
+        gecirilen_gece = (degisim - giris).days
+
+        # Tam taşınma
+        if gecirilen_gece <= 0:
+            cakisma = _musaitlik_sorgusu(cur, yeni_oda_id, eski["giris_tarihi"],
+                                         eski["gece_sayisi"], haric_ro_id=ro_id)
+            if cakisma:
+                isimler = ", ".join(c["ad_soyad"] for c in cakisma)
+                raise ValueError(f"Hedef oda istenen tarihlerde dolu: {isimler}.")
+            cur.execute("UPDATE rezervasyon_odalar SET oda_id=? WHERE id=?", (yeni_oda_id, ro_id))
+            conn.commit()
+            loglama.islem_yaz("oda_degistir", f"{ust['ad_soyad']} rezervasyonu oda satırı (ro#{ro_id}) {yeni_oda['kat_adi']} Oda {yeni_oda['oda_no']} odasına taşındı (tüm gece).")
+            return ro_id, None
+
+        if gecirilen_gece >= eski["gece_sayisi"]:
+            raise ValueError("Bu tarihte misafirin zaten çıkışı var, oda değişikliğine gerek yok.")
+
+        # Kısmi taşınma: eski satır kesime kadar, yeni satır kesimden itibaren
+        kalan_gece = eski["gece_sayisi"] - gecirilen_gece
+        cakisma = _musaitlik_sorgusu(cur, yeni_oda_id, degisim_tarihi, kalan_gece,
+                                     haric_rez_id=eski["rezervasyon_id"])
+        if cakisma:
+            isimler = ", ".join(c["ad_soyad"] for c in cakisma)
+            raise ValueError(f"Hedef oda bu tarihten sonra dolu: {isimler}.")
+
+        tasinacaklar = cur.execute(
+            "SELECT * FROM odemeler WHERE rezervasyon_oda_id=? AND tarih>=?",
+            (ro_id, degisim_tarihi)
+        ).fetchall()
+        odeme_haritasi = {o["tarih"]: o for o in tasinacaklar}
+
+        cur.execute("UPDATE rezervasyon_odalar SET gece_sayisi=? WHERE id=?", (gecirilen_gece, ro_id))
+        cur.execute("DELETE FROM odemeler WHERE rezervasyon_oda_id=? AND tarih>=?", (ro_id, degisim_tarihi))
+
+        # Yeni oda satiri (aynı rezervasyonun devamı)
         cur.execute("""
-            UPDATE odemeler SET odendi=?, odeme_sekli=?, odeme_notu=? WHERE id=?
-        """, (1 if odendi else 0, odeme_sekli, odeme_notu, odeme_id))
+            INSERT INTO rezervasyon_odalar
+            (rezervasyon_id, oda_id, giris_tarihi, gece_sayisi, kisi_sayisi, fiyat_tipi, gecelik_ucret, checkin_yapildi)
+            VALUES (?,?,?,?,?,?,?,?)
+        """, (eski["rezervasyon_id"], yeni_oda_id, degisim_tarihi, kalan_gece,
+              eski["kisi_sayisi"], eski["fiyat_tipi"], eski["gecelik_ucret"], eski["checkin_yapildi"]))
+        yeni_ro_id = cur.lastrowid
+
+        # Misafirleri de tasi
+        misafirler = cur.execute(
+            "SELECT ad_soyad, tc_no, sira_no, fiyat_tipi, gecelik_ucret FROM misafirler WHERE rezervasyon_oda_id=?",
+            (ro_id,),
+        ).fetchall()
+        for m in misafirler:
+            cur.execute(
+                "INSERT INTO misafirler (rezervasyon_oda_id, ad_soyad, tc_no, sira_no, fiyat_tipi, gecelik_ucret) "
+                "VALUES (?,?,?,?,?,?)",
+                (yeni_ro_id, m["ad_soyad"], m["tc_no"], m["sira_no"], m["fiyat_tipi"], m["gecelik_ucret"])
+            )
+
+        varsayilan_gecelik_toplam = eski["gecelik_ucret"] * eski["kisi_sayisi"]
+        for i in range(kalan_gece):
+            gun = (degisim + timedelta(days=i)).isoformat()
+            eski_odeme = odeme_haritasi.get(gun)
+            if eski_odeme:
+                odendi = eski_odeme["odendi"]
+                sekli = eski_odeme["odeme_sekli"]
+                notu = eski_odeme["odeme_notu"]
+                tutar = eski_odeme["tutar"]
+            else:
+                odendi = 0
+                sekli = None
+                notu = None
+                tutar = varsayilan_gecelik_toplam
+            cur.execute("""
+                INSERT INTO odemeler (rezervasyon_oda_id, tarih, tutar, odendi, odeme_sekli, odeme_notu)
+                VALUES (?,?,?,?,?,?)
+            """, (yeni_ro_id, gun, tutar, odendi, sekli, notu))
+
         conn.commit()
-        if o:
-            durum = "ödendi" if odendi else "ödendi değil"
-            loglama.islem_yaz("odeme", f"{o['ad_soyad']} (Oda {o['oda_no']}, {o['tarih']} gecesi, {o['tutar']} TL): {durum}. Sekli: {odeme_sekli or 'Yok'}")
+        loglama.islem_yaz("oda_degistir", f"{ust['ad_soyad']} rezervasyonu {degisim_tarihi} itibariyle {yeni_oda['kat_adi']} Oda {yeni_oda['oda_no']} odasına taşındı (eski satır #{ro_id} kesime kadar, yeni satır #{yeni_ro_id}).")
+        odasi_odeme_tutarlari_guncelle(yeni_ro_id)
+        return ro_id, yeni_ro_id
     except Exception:
         conn.rollback()
         raise
@@ -1025,25 +1103,87 @@ def odeme_guncelle(odeme_id, odendi, odeme_sekli=None, odeme_notu=None):
         conn.close()
 
 
-def musaitlik_kontrol(oda_id, giris_tarihi, gece_sayisi, haric_rez_id=None):
-    """Seçilen oda, tarih aralığında dolu mu diye kontrol eder.
-    Çıkış yapılmış rezervasyonlar cikis_tarihi'ne kadar odayı tutar."""
+# ---------------- REZERVASYON ODA SATIRI: TARİH DEĞİŞTİRME ----------------
+
+def _odemeleri_yeniden_kur(cur, ro, yeni_giris_tarihi, yeni_gece_sayisi):
+    """Bir oda satirinin ödemelerini yeni tarih aralığına göre yeniden kurar.
+    Aynı tarihli eski ödemenin ödendi/şekli/notu korunur; kapsam dışı kalan
+    ÖDENMİŞ gecelerin tarihleri döndürülür (UI bu listeyi kullanıcıya gösterir)."""
+    mevcut = cur.execute(
+        "SELECT * FROM odemeler WHERE rezervasyon_oda_id=? ORDER BY tarih", (ro["id"],)
+    ).fetchall()
+    yeni_set = set(g.isoformat() for g in _tarih_araligi(yeni_giris_tarihi, yeni_gece_sayisi))
+    dusen_odenmis = []
+    for o in mevcut:
+        if o["odendi"] and o["tarih"] not in yeni_set:
+            dusen_odenmis.append(o["tarih"])
+    dusen_odenmis.sort()
+
+    cur.execute("DELETE FROM odemeler WHERE rezervasyon_oda_id=?", (ro["id"],))
+    toplam = (ro["gecelik_ucret"] or 0) * (ro["kisi_sayisi"] or 1)
+    for gun in _tarih_araligi(yeni_giris_tarihi, yeni_gece_sayisi):
+        gun_str = gun.isoformat()
+        eski = next((o for o in mevcut if o["tarih"] == gun_str), None)
+        if eski is not None:
+            cur.execute(
+                "INSERT INTO odemeler (rezervasyon_oda_id, tarih, tutar, odendi, odeme_sekli, odeme_notu) "
+                "VALUES (?,?,?,?,?,?)",
+                (ro["id"], gun_str, eski["tutar"] or toplam,
+                 eski["odendi"], eski["odeme_sekli"], eski["odeme_notu"]),
+            )
+        else:
+            cur.execute(
+                "INSERT INTO odemeler (rezervasyon_oda_id, tarih, tutar, odendi) VALUES (?,?,?,0)",
+                (ro["id"], gun_str, toplam),
+            )
+    return dusen_odenmis
+
+
+def rezervasyon_odasi_tarih_degistir(ro_id, yeni_giris_tarihi, yeni_gece_sayisi):
+    """Bir oda satirinin tarih/gece sayısını değiştirir (ODA BAZLI).
+    Yeni tarih geçmişte olamaz. Yeni aralıkta o odada çakışan başka rezervasyon
+    engellenir. Ödemeler yeniden kurulur; ödenmiş geceler tarih eşleşmesine göre
+    korunur. Düşen ödenmiş gecelerin tarihleri döndürülür.
+
+    NOT: Eski modeldeki 'oda değişikliği dengesi' (iki rezervasyonu birbirine
+    bağlama) mantığı kaldirildi: artiк her oda satiri tamamen bağımsız."""
+    bugun = date.today().isoformat()
+    if yeni_giris_tarihi < bugun:
+        raise ValueError("Geçmiş tarihe rezervasyon taşınamaz.")
+
     conn = get_connection()
     try:
-        q = """
-            SELECT r.id, r.ad_soyad, r.giris_tarihi, r.gece_sayisi
-            FROM rezervasyonlar r
-            WHERE r.oda_id = ? AND r.iptal = 0
-              AND date(r.giris_tarihi) < date(?, '+' || ? || ' day')
-              AND date(COALESCE(NULLIF(r.cikis_tarihi, ''),
-                                date(r.giris_tarihi, '+' || r.gece_sayisi || ' day'))) > date(?)
-        """
-        params = [oda_id, giris_tarihi, gece_sayisi, giris_tarihi]
-        if haric_rez_id:
-            q += " AND r.id != ?"
-            params.append(haric_rez_id)
-        rows = conn.execute(q, params).fetchall()
-        return rows
+        cur = conn.cursor()
+        ro = cur.execute(
+            "SELECT ro.*, o.oda_no, o.kat_adi FROM rezervasyon_odalar ro "
+            "JOIN odalar o ON ro.oda_id=o.id WHERE ro.id=?", (ro_id,)
+        ).fetchone()
+        if not ro:
+            raise ValueError("Oda satırı bulunamadı.")
+        ust = cur.execute(
+            "SELECT * FROM rezervasyonlar WHERE id=? AND iptal=0", (ro["rezervasyon_id"],)
+        ).fetchone()
+        if not ust:
+            raise ValueError("Rezervasyon bulunamadı veya iptal edilmiş.")
+
+        cakisma = _musaitlik_sorgusu(cur, ro["oda_id"], yeni_giris_tarihi, yeni_gece_sayisi,
+                                     haric_ro_id=ro_id)
+        if cakisma:
+            isimler = ", ".join(c["ad_soyad"] for c in cakisma)
+            raise ValueError(f"Bu tarihler odada dolu: {isimler}.")
+
+        dusen_odenmis = _odemeleri_yeniden_kur(cur, ro, yeni_giris_tarihi, yeni_gece_sayisi)
+        cur.execute(
+            "UPDATE rezervasyon_odalar SET giris_tarihi=?, gece_sayisi=? WHERE id=?",
+            (yeni_giris_tarihi, yeni_gece_sayisi, ro_id),
+        )
+        conn.commit()
+        loglama.islem_yaz("rezervasyon_tarih", f"{ust['ad_soyad']} rezervasyonu oda satırı (ro#{ro_id}) tarihi değiştirildi: {ro['giris_tarihi']}+{ro['gece_sayisi']} -> {yeni_giris_tarihi}+{yeni_gece_sayisi}.")
+        dusen_odenmis.sort()
+        return dusen_odenmis
+    except Exception:
+        conn.rollback()
+        raise
     finally:
         conn.close()
 
@@ -1051,20 +1191,21 @@ def musaitlik_kontrol(oda_id, giris_tarihi, gece_sayisi, haric_rez_id=None):
 # ---------------- TAKVİM IZGARASI ----------------
 
 def doluluk_haritasi(baslangic_str, gun_sayisi):
-    """Belirtilen tarih aralığındaki tüm dolu gece kayıtlarını tek sorguda getirir.
-    Çıkış yapılmış rezervasyonlar cikis_tarihi'ne kadar dolu sayılır
-    (çıkış günü oda aynı gece yeni misafire verilebilir)."""
+    """Belirtilen tarih aralığındaki dolu oda satirlarını tek sorguda getirir.
+    Çıkış yapılmış satirlar cikis_tarihi'ne kadar dolu sayılır."""
     baslangic = datetime.strptime(baslangic_str, "%Y-%m-%d").date()
     conn = get_connection()
     try:
         rows = conn.execute("""
-            SELECT r.id as rez_id, r.oda_id, r.ad_soyad, r.giris_tarihi, r.gece_sayisi,
-                   r.cikis_tarihi, r.kisi_sayisi, r.fiyat_tipi, r.referans
-            FROM rezervasyonlar r
+            SELECT ro.oda_id, ro.giris_tarihi, ro.gece_sayisi, ro.cikis_tarihi,
+                   ro.kisi_sayisi, ro.fiyat_tipi, ro.rezervasyon_id,
+                   r.ad_soyad, r.referans, r.iptal, r.id as rez_id
+            FROM rezervasyon_odalar ro
+            JOIN rezervasyonlar r ON ro.rezervasyon_id = r.id
             WHERE r.iptal = 0
-              AND date(r.giris_tarihi) < date(?, '+' || ? || ' day')
-              AND date(COALESCE(NULLIF(r.cikis_tarihi, ''),
-                                date(r.giris_tarihi, '+' || r.gece_sayisi || ' day'))) > date(?)
+              AND date(ro.giris_tarihi) < date(?, '+' || ? || ' day')
+              AND date(COALESCE(NULLIF(ro.cikis_tarihi, ''),
+                                date(ro.giris_tarihi, '+' || ro.gece_sayisi || ' day'))) > date(?)
         """, (baslangic_str, gun_sayisi, baslangic_str)).fetchall()
     finally:
         conn.close()
@@ -1083,128 +1224,6 @@ def doluluk_haritasi(baslangic_str, gun_sayisi):
     return harita
 
 
-# ---------------- TARİH DEĞİŞTİRME ----------------
-
-def rezervasyon_tarih_degistir(rez_id, yeni_giris_tarihi, yeni_gece_sayisi):
-    """Rezervasyonun tarih/gece sayısını değiştirir. Yeni tarih geçmişte olamaz.
-    Yeni aralıkta cakisma olan rezervasyonlar engellenir.
-    Ödemeler yeniden kurulur; zaten ödenmiş geceler TARİH EŞLEŞMESİNE göre korunur.
-    Düşen (artık kapsamda olmayan) ödenmiş geceler için dondurulen listesi döndürülür.
-
-    ODA DEĞİŞİKLİĞİ DENGESİ: Rezervasyon 'Oda Değiştir' ile ortadan bölünmüşse
-    (iki ayrı rezervasyon, aynı misafir), bu parçalardan birinin tarihi/gece sayısı
-    değiştirilirken diğer parça da otomatik dengelenir. Amaç: aynı anda iki odada
-    görünme (çakışma) oluşmamalı ve toplam gece sayısı korunmalı."""
-    bugun = date.today().isoformat()
-    if yeni_giris_tarihi < bugun:
-        raise ValueError("Geçmiş tarihe rezervasyon taşınamaz.")
-
-    conn = get_connection()
-    try:
-        cur = conn.cursor()
-        rez = cur.execute(
-            "SELECT r.*, o.oda_no, o.kat_adi FROM rezervasyonlar r JOIN odalar o ON r.oda_id=o.id "
-            "WHERE r.id=? AND r.iptal=0",
-            (rez_id,),
-        ).fetchone()
-        if not rez:
-            raise ValueError("Rezervasyon bulunamadı.")
-
-        devam = _oda_degistirme_devami(cur, rez)
-        oncesi = _oda_degistirme_oncesi(cur, rez)
-
-        if devam:
-            # İlk parça düzenleniyor: kesim (oda değişim) tarihi sabit kalır,
-            # toplam gece sayısı iki parçaya paylaştırılır.
-            kesim = devam["giris_tarihi"]
-            if yeni_giris_tarihi >= kesim:
-                raise ValueError(
-                    f"Giriş tarihi ({yeni_giris_tarihi}) oda değişim tarihi olan "
-                    f"{kesim}'den sonra kalamaz. Devam rezervasyonunun girişini düzenleyebilirsin."
-                )
-            ilk_gece = (datetime.strptime(kesim, "%Y-%m-%d").date()
-                        - datetime.strptime(yeni_giris_tarihi, "%Y-%m-%d").date()).days
-            if yeni_gece_sayisi <= ilk_gece:
-                raise ValueError(
-                    f"Gece sayısı, oda değişim tarihine kadar olan kısmı ({ilk_gece} gece) "
-                    f"ancak kapsıyor; devam rezervasyonu kalması için "
-                    f"en az {ilk_gece + 1} gece girilmelidir."
-                )
-            devam_gece = yeni_gece_sayisi - ilk_gece
-            efektif_giris = yeni_giris_tarihi
-            efektif_gece = ilk_gece
-        else:
-            efektif_giris = yeni_giris_tarihi
-            efektif_gece = yeni_gece_sayisi
-            devam_gece = None
-
-        cakisma = _musaitlik_sorgusu(cur, rez["oda_id"], efektif_giris, efektif_gece, haric_rez_id=rez_id)
-        if cakisma:
-            isimler = ", ".join(c["ad_soyad"] for c in cakisma)
-            raise ValueError(f"Bu tarihler hedef odada dolu: {isimler}.")
-
-        dusen_odenmis = _odemeleri_yeniden_kur(cur, rez, efektif_giris, efektif_gece)
-        cur.execute(
-            "UPDATE rezervasyonlar SET giris_tarihi=?, gece_sayisi=? WHERE id=?",
-            (efektif_giris, efektif_gece, rez_id),
-        )
-
-        ek_not = ""
-        if devam:
-            cakisma2 = _musaitlik_sorgusu(
-                cur, devam["oda_id"], devam["giris_tarihi"], devam_gece, haric_rez_id=devam["id"])
-            if cakisma2:
-                isimler = ", ".join(c["ad_soyad"] for c in cakisma2)
-                raise ValueError(f"Devam odası bu tarihlerde dolu: {isimler}.")
-            dusen_odenmis += _odemeleri_yeniden_kur(
-                cur, devam, devam["giris_tarihi"], devam_gece)
-            cur.execute("UPDATE rezervasyonlar SET gece_sayisi=? WHERE id=?", (devam_gece, devam["id"]))
-            ek_not += f" | devam oda id {devam['oda_id']}" + (f" -> {devam_gece} gece")
-
-        if oncesi and not devam:
-            yeni_oncesi_gece = (datetime.strptime(yeni_giris_tarihi, "%Y-%m-%d").date()
-                                - datetime.strptime(oncesi["giris_tarihi"], "%Y-%m-%d").date()).days
-            if yeni_giris_tarihi <= oncesi["giris_tarihi"]:
-                raise ValueError(
-                    "Yeni giriş tarihi, oda değişiminden önceki rezervasyonun başlangıcına "
-                    "eşit veya öncesinde. Önceki rezervasyonun tarihi elle düzenlenmeli."
-                )
-            if yeni_oncesi_gece < oncesi["gece_sayisi"]:
-                # devamın girişi öne alındı: önceki parçanın geceleri kesimden sonrasını
-                # kapsamasın (çakışmayı önlemek için kısaltılır)
-                cakisma3 = _musaitlik_sorgusu(
-                    cur, oncesi["oda_id"], oncesi["giris_tarihi"], yeni_oncesi_gece,
-                    haric_rez_id=oncesi["id"])
-                if cakisma3:
-                    isimler = ", ".join(c["ad_soyad"] for c in cakisma3)
-                    raise ValueError(f"Önceki oda bu tarihlerde dolu: {isimler}.")
-                dusen_odenmis += _odemeleri_yeniden_kur(
-                    cur, oncesi, oncesi["giris_tarihi"], yeni_oncesi_gece)
-                cur.execute(
-                    "UPDATE rezervasyonlar SET gece_sayisi=? WHERE id=?",
-                    (yeni_oncesi_gece, oncesi["id"]))
-                ek_not += f" | önceki oda id {oncesi['oda_id']} -> {yeni_oncesi_gece} gece"
-
-        conn.commit()
-        loglama.islem_yaz(
-            "rezervasyon_tarih",
-            f"{rez['ad_soyad']} (Oda {rez['oda_no']}) tarihi değiştirildi: "
-            f"{rez['giris_tarihi']}+{rez['gece_sayisi']} -> {efektif_giris}+{efektif_gece}{ek_not}",
-        )
-        odeme_tutarlarini_guncelle(rez_id)
-        if devam:
-            odeme_tutarlarini_guncelle(devam["id"])
-        if oncesi and not devam:
-            odeme_tutarlarini_guncelle(oncesi["id"])
-        dusen_odenmis.sort()
-        return dusen_odenmis
-    except Exception:
-        conn.rollback()
-        raise
-    finally:
-        conn.close()
-
-
 # ---------------- İSTATİSTİK ----------------
 
 def aylik_istatistik(ay, yil):
@@ -1214,50 +1233,51 @@ def aylik_istatistik(ay, yil):
         ay_bas = f"{yil:04d}-{ay:02d}-01"
         nxt = (datetime(yil, ay, 1) + timedelta(days=32)).replace(day=1)
         ay_son = (nxt - timedelta(days=1)).isoformat()
+        ay_ilk_yedi = f"{yil:04d}-{ay:02d}"
 
-        # Satilan geceler + gelir: iptal edilmemis rezervasyonlarin
-        # ilgili ay icindeki geceleri (odemeler tablosundaki satirlar)
+        # Satilan geceler + gelir: oda satirlarinin ilgili ay icindeki geceleri
         reklar = conn.execute("""
             SELECT od.*, r.ad_soyad FROM odemeler od
-            JOIN rezervasyonlar r ON od.rezervasyon_id = r.id
+            JOIN rezervasyon_odalar ro ON od.rezervasyon_oda_id = ro.id
+            JOIN rezervasyonlar r ON ro.rezervasyon_id = r.id
             WHERE r.iptal = 0 AND od.tarih >= ? AND od.tarih <= ?
         """, (ay_bas, ay_son)).fetchall()
         satilan_gece = len(reklar)
-        # gelir: tutar * (sayilan gece) - burada tutar hep gecelik toplamdir
-        # odendi alanindan bagimsiz: satilan (satis degeri). Tahsilat degil.
         gelir = sum(o["tutar"] or 0 for o in reklar)
-
-        # tahsil edilen (odendi=1) ay icindeki tutarlar
         tahsilat = sum(o["tutar"] or 0 for o in reklar if o["odendi"])
 
+        # Iptal edilmis rezervasyonlarin (o ay olusturulmus) toplam geceleri
         iptal_rez = conn.execute("""
-            SELECT r.* FROM rezervasyonlar r
+            SELECT COALESCE(SUM(ro.gece_sayisi), 0) as geceler
+            FROM rezervasyonlar r
+            LEFT JOIN rezervasyon_odalar ro ON ro.rezervasyon_id = r.id
             WHERE r.iptal = 1
               AND substr(r.olusturma_tarihi, 1, 10) >= ? AND substr(r.olusturma_tarihi, 1, 10) <= ?
-        """, (ay_bas, ay_son)).fetchall()
-        iptal_gece = sum(r["gece_sayisi"] for r in iptal_rez)
+        """, (ay_bas, ay_son)).fetchone()["geceler"]
 
-        # gun gecmemis/iptal olmayan ama gelmeyen rezervasyonlar o ayda (no-show)
+        # Gelmemis (no-show) oda satirlari
         noshow_rez = conn.execute("""
-            SELECT r.* FROM rezervasyonlar r
-            WHERE r.iptal = 0 AND r.checkin_yapildi = 0
-              AND substr(r.giris_tarihi, 1, 7) = ? AND substr(r.giris_tarihi, 1, 10) <= date('now')
-        """, (f"{yil:04d}-{ay:02d}",)).fetchall()
-        noshow_gece = sum(r["gece_sayisi"] for r in noshow_rez)
+            SELECT COALESCE(SUM(ro.gece_sayisi), 0) as geceler
+            FROM rezervasyon_odalar ro
+            JOIN rezervasyonlar r ON ro.rezervasyon_id = r.id
+            WHERE r.iptal = 0 AND ro.checkin_yapildi = 0
+              AND substr(ro.giris_tarihi, 1, 7) = ? AND substr(ro.giris_tarihi, 1, 10) <= date('now')
+        """, (ay_ilk_yedi,)).fetchone()["geceler"]
 
-        # aktif rezervasyon sayisi (adet)
+        # Aktif rezervasyon sayisi (o ay girisli)
         rez_adedi = conn.execute("""
-            SELECT COUNT(*) as c FROM rezervasyonlar r
-            WHERE r.iptal = 0 AND substr(r.giris_tarihi, 1, 7) = ?
-        """, (f"{yil:04d}-{ay:02d}",)).fetchone()["c"]
+            SELECT COUNT(DISTINCT r.id) as c FROM rezervasyonlar r
+            JOIN rezervasyon_odalar ro ON ro.rezervasyon_id = r.id
+            WHERE r.iptal = 0 AND substr(ro.giris_tarihi, 1, 7) = ?
+        """, (ay_ilk_yedi,)).fetchone()["c"]
 
         return {
-            "ay": f"{yil:04d}-{ay:02d}",
+            "ay": ay_ilk_yedi,
             "satilan_gece": satilan_gece,
             "gelir": gelir,
             "tahsilat": tahsilat,
-            "iptal_gece": iptal_gece,
-            "noshow_gece": noshow_gece,
+            "iptal_gece": iptal_rez,
+            "noshow_gece": noshow_rez,
             "rez_adedi": rez_adedi,
         }
     finally:
