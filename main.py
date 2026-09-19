@@ -67,6 +67,7 @@ class OdaDurumuTab(QWidget):
     def __init__(self):
         super().__init__()
         layout = QVBoxLayout(self)
+        layout.setSpacing(6)
 
         ust = QHBoxLayout()
         ust.addWidget(QLabel("Tarih:"))
@@ -92,9 +93,6 @@ class OdaDurumuTab(QWidget):
         ust.addWidget(excel_btn)
 
         layout.addLayout(ust)
-
-        self.ozet_label = QLabel("")
-        layout.addWidget(self.ozet_label)
 
         self.tablo = QTableWidget()
         self.tablo.setColumnCount(12)
@@ -284,6 +282,7 @@ class GunlukGirisTab(QWidget):
     def __init__(self):
         super().__init__()
         layout = QVBoxLayout(self)
+        layout.setSpacing(6)
 
         ust = QHBoxLayout()
         ust.addWidget(QLabel("Tarih:"))
@@ -402,6 +401,7 @@ class CheckinTab(QWidget):
         super().__init__()
         self.yenile_callback = yenile_callback
         layout = QVBoxLayout(self)
+        layout.setSpacing(6)
 
         ust = QHBoxLayout()
         ust.addWidget(QLabel("Tarih:"))
@@ -484,6 +484,7 @@ class CheckinTab(QWidget):
                     btn = QPushButton("Misafirleri Düzenle")
                 else:
                     btn = QPushButton("✅ Check-in Yap")
+                    btn.setObjectName("birincil")
                 btn.clicked.connect(lambda checked, rid=r["ro_id"]: self._checkin_ac(rid))
                 islem_layout.addWidget(btn)
             self.tablo.setCellWidget(row_idx, 6, islem_widget)
@@ -1139,6 +1140,7 @@ class RezervasyonYonetimiTab(QWidget):
         super().__init__()
         self.yenile_callback = yenile_callback
         layout = QVBoxLayout(self)
+        layout.setSpacing(6)
 
         ust = QHBoxLayout()
         ust.addWidget(QLabel("Göster:"))
@@ -1190,8 +1192,8 @@ class RezervasyonYonetimiTab(QWidget):
         layout.addLayout(arama_satiri)
 
         renk_bilgi = QLabel(
-            "🔴 Kırmızı satır = Gelmedi (No-Show). İsme çift tıkla → tam detay. "
-            "Tablo arayüzü iki yönlü: alttan kaydırmaz, filtreler üstte."
+            "🔴 Kırmızı satır = Gelmedi (No-Show). İsme çift tık → tam detay. "
+            "Butonlar sağda: Oda Değiştir / İptal Et."
         )
         renk_bilgi.setWordWrap(False)
         renk_bilgi.setStyleSheet("font-style: italic; font-size: 10px;")
@@ -1267,6 +1269,7 @@ class RezervasyonYonetimiTab(QWidget):
         rows = self._satirlari_getir(limit=self._secili_limit())
         rows = list(rows)
         ozet = repository.rezervasyonlari_toplam_ozeti([r["id"] for r in rows]) if rows else {}
+        yabanci_sayilari = repository.rezervasyonlar_yabanci_sayilari([r["id"] for r in rows]) if rows else {}
         gelmedi_sayisi = 0
 
         self.tablo.setUpdatesEnabled(False)
@@ -1281,8 +1284,13 @@ class RezervasyonYonetimiTab(QWidget):
                 if gelmedi:
                     gelmedi_sayisi += 1
 
+                yabanci_sayisi = yabanci_sayilari.get(r["id"], 0)
+                ad_metni = r["ad_soyad"]
+                if yabanci_sayisi:
+                    ad_metni = f"{ad_metni}  🌍 {yabanci_sayisi} yabancı"
+
                 degerler = [
-                    str(r["id"]), r["oda_ozeti"] or "-", r["ad_soyad"],
+                    str(r["id"]), r["oda_ozeti"] or "-", ad_metni,
                     r["telefon"] or "", str(r["toplam_kisi"]), r["giris_tarihi"],
                     str(r["toplam_gece"]), r["cikis_tarihi"] or "", fiyat_metni,
                     r["referans"] or "", f"{r['oda_sayisi']} oda",
@@ -1421,6 +1429,7 @@ class OdaYonetimiTab(QWidget):
         self.yenile_callback = yenile_callback
         self.secili_oda_id = None
         layout = QVBoxLayout(self)
+        layout.setSpacing(6)
 
         self.tablo = QTableWidget()
         self.tablo.setColumnCount(8)
@@ -1501,6 +1510,7 @@ class OdaYonetimiTab(QWidget):
 
         btn_satir = QHBoxLayout()
         ekle_btn = QPushButton("✚ Yeni Oda Ekle")
+        ekle_btn.setObjectName("birincil")
         ekle_btn.clicked.connect(self.yeni_oda_ekle)
         guncelle_btn = QPushButton("Seçili Odayı Güncelle")
         guncelle_btn.clicked.connect(self.secili_odayi_guncelle)
@@ -1810,6 +1820,7 @@ class CikisTab(QWidget):
         super().__init__()
         self.yenile_callback = yenile_callback
         layout = QVBoxLayout(self)
+        layout.setSpacing(6)
 
         ust = QHBoxLayout()
         ust.addWidget(QLabel("Tarih:"))
@@ -1867,6 +1878,7 @@ class CikisTab(QWidget):
             for col, val in enumerate(degerler):
                 self.tablo.setItem(row_idx, col, QTableWidgetItem(val))
             cikis_btn = QPushButton("🚪 Çıkış Yap")
+            cikis_btn.setObjectName("birincil")
             cikis_btn.clicked.connect(lambda checked, rid=r["id"]: self.cikis_yap(rid))
             islem_widget = QWidget()
             il = QHBoxLayout(islem_widget)
@@ -1989,6 +2001,7 @@ class AyarlarTab(QWidget):
         fiyat_kutu.setLayout(fiyat_form)
 
         fiyat_btn = QPushButton("💾 Fiyatları Kaydet")
+        fiyat_btn.setObjectName("birincil")
         fiyat_btn.clicked.connect(self.fiyatlari_kaydet)
         fiyat_not = QLabel(
             "Yeni fiyatlar bundan SONRA alınan rezervasyonlarda geçerli olur. "
@@ -2136,6 +2149,7 @@ class IslemGecmisiTab(QWidget):
     def __init__(self):
         super().__init__()
         layout = QVBoxLayout(self)
+        layout.setSpacing(6)
 
         ust = QHBoxLayout()
         ust.addWidget(QLabel("Filtre (işlem türü):"))
@@ -2221,6 +2235,13 @@ class AnaPencere(QMainWindow):
         excel_rapor_btn = QPushButton("📊 Excel Raporu")
         excel_rapor_btn.clicked.connect(self.excel_raporu_penceresini_ac)
         ust_bar.addWidget(excel_rapor_btn)
+
+        kbs_btn = QPushButton("🛂 KBS Bildirimi")
+        kbs_btn.setToolTip(
+            "Kimlik Bildirim Sistemi: bekleyen giriş/çıkış bildirimlerini (yerli/yabancı) "
+            "listeler ve Excel olarak çıkarır. Gönderildi işaretlenenler bir daha görünmez.")
+        kbs_btn.clicked.connect(self.kbs_penceresini_ac)
+        ust_bar.addWidget(kbs_btn)
         ana_layout.addWidget(ust_cubuk)
 
         self.tabs = QTabWidget()
@@ -2274,6 +2295,15 @@ class AnaPencere(QMainWindow):
         dialog = ExcelRaporPenceresi(self)
         dialog.exec()
 
+    def kbs_penceresini_ac(self):
+        from kbs_pencere import KbsPencere
+        dialog = KbsPencere(
+            db_yolu=database.DB_PATH,
+            takip_yolu=os.path.join(database.VERI_KLASORU, "kbs_takip.db"),
+            parent=self,
+        )
+        dialog.exec()
+
     def _tumunu_yenile(self):
         self.oda_durumu_tab.yenile()
         self.checkin_tab.yenile()
@@ -2296,10 +2326,14 @@ class KullaniciYonetimiTab(QWidget):
         super().__init__()
         self.aktif_kullanici = aktif_kullanici
         layout = QVBoxLayout(self)
+        layout.setSpacing(6)
 
+        giris_yapan = ""
+        if self.aktif_kullanici is not None:
+            giris_yapan = self.aktif_kullanici["kullanici_adi"]
         bilgi = QLabel(
             "👤  Resepsiyon çalışanlarına ayrı hesap açabilirsin (yetki aynıdır; fark yalnızca "
-            "kimin aldığını görmektir). Şu an: <b>admin</b>"
+            f"kimin aldığını görmektir). Şu an: <b>{giris_yapan}</b>"
         )
         bilgi.setWordWrap(False)
         bilgi.setStyleSheet("font-size: 10px;")

@@ -130,9 +130,20 @@ def init_db():
                 sira_no INTEGER DEFAULT 1,
                 fiyat_tipi TEXT,
                 gecelik_ucret INTEGER,
+                uyruk TEXT DEFAULT '',
+                dogum_tarihi TEXT DEFAULT '',
+                cinsiyet TEXT DEFAULT '',
+                dogum_yeri TEXT DEFAULT '',
+                belge_turu TEXT DEFAULT '',
                 FOREIGN KEY (rezervasyon_oda_id) REFERENCES rezervasyon_odalar(id)
             )
         """)
+        # Yabancı misafir bilgileri: eski bir veritabanı kullanılıyorsa
+        # eksik kolonları boş değerlerle tamamla (yatay uyum, veri kaybı yok).
+        _misafir_kolonlari = [r[1] for r in cur.execute("PRAGMA table_info(misafirler)").fetchall()]
+        for _kolon in ("uyruk", "dogum_tarihi", "cinsiyet", "dogum_yeri", "belge_turu"):
+            if _kolon not in _misafir_kolonlari:
+                cur.execute("ALTER TABLE misafirler ADD COLUMN %s TEXT DEFAULT ''" % _kolon)
 
         # Her gece icin oda bazli ayri odeme kaydi (defterdeki + isareti mantigi)
         cur.execute("""

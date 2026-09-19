@@ -639,10 +639,36 @@ def odasi_misafirler_listele(ro_id):
         conn.close()
 
 
+def rezervasyonlar_yabanci_sayilari(rez_ids):
+    """Verilen rezervasyonların her birinde kaç YABANCI misafir kaydı olduğunu döner.
+    Yabancı = TC No alanında 11 haneli rakam olmayan kayıt (pasaport/belge no)."""
+    if not rez_ids:
+        return {}
+    conn = get_connection()
+    try:
+        yer = ",".join("?" * len(rez_ids))
+        rows = conn.execute(
+            "SELECT ro.rezervasyon_id AS rez_id, COUNT(*) AS n "
+            "FROM misafirler m JOIN rezervasyon_odalar ro ON ro.id = m.rezervasyon_oda_id "
+            f"WHERE ro.rezervasyon_id IN ({yer}) "
+            "AND m.tc_no IS NOT NULL AND TRIM(m.tc_no) <> '' "
+            "AND (LENGTH(m.tc_no) <> 11 OR m.tc_no NOT GLOB '*[0-9]*') "
+            "GROUP BY ro.rezervasyon_id",
+            list(rez_ids),
+        ).fetchall()
+        return {r["rez_id"]: r["n"] for r in rows}
+    finally:
+        conn.close()
+
+
 def odasi_misafirleri_kaydet(ro_id, misafir_listesi, ekstra_yatak=False):
     """misafir_listesi: [(ad_soyad, tc_no), ...]
     veya 4 elemanli gelsede kişi başı fiyat bilgisi de saklanır:
         [(ad_soyad, tc_no, fiyat_tipi, gecelik_ucret), ...]
+    Ya da her öğe sözlük olabilir (check-in penceresi yabancı bilgilerini de
+    böyle aktarır):
+        {ad_soyad, tc_no, fiyat_tipi, gecelik_ucret, uyruk, dogum_tarihi,
+         cinsiyet, dogum_yeri, belge_turu}
     Mevcut listeyi tamamen değiştirir, oda satirinin kisi_sayisi'nini senkronlar
     ve henüz ödenmemiş gecelerin tutarini yeniden hesaplar."""
     conn = get_connection()
@@ -662,17 +688,36 @@ def odasi_misafirleri_kaydet(ro_id, misafir_listesi, ekstra_yatak=False):
             )
         cur.execute("DELETE FROM misafirler WHERE rezervasyon_oda_id=?", (ro_id,))
         for i, satir in enumerate(misafir_listesi, start=1):
-            ad_soyad = satir[0].strip()
-            if not ad_soyad:
-                raise ValueError("Misafir adı boş olamaz.")
-            tc_no = satir[1] if len(satir) > 1 else ""
-            fiyat_tipi = satir[2] if len(satir) > 2 else None
-            ucret = satir[3] if len(satir) > 3 else None
-            cur.execute(
-                "INSERT INTO misafirler (rezervasyon_oda_id, ad_soyad, tc_no, sira_no, fiyat_tipi, gecelik_ucret) "
-                "VALUES (?,?,?,?,?,?)",
-                (ro_id, ad_soyad, tc_no, i, fiyat_tipi, ucret)
-            )
+            if isinstance(satir, dict):
+                ad_soyad = (satir.get("ad_soyad") or "").strip()
+                if not ad_soyad:
+                    raise ValueError("Misafir adı boş olamaz.")
+                tc_no = (satir.get("tc_no") or "").strip()
+                fiyat_tipi = satir.get("fiyat_tipi")
+                ucret = satir.get("gecelik_ucret")
+                cur.execute(
+                    "INSERT INTO misafirler (rezervasyon_oda_id, ad_soyad, tc_no, sira_no, "
+                    "fiyat_tipi, gecelik_ucret, uyruk, dogum_tarihi, cinsiyet, dogum_yeri, belge_turu) "
+                    "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                    (ro_id, ad_soyad, tc_no, i, fiyat_tipi, ucret,
+                     (satir.get("uyruk") or "").strip(),
+                     (satir.get("dogum_tarihi") or "").strip(),
+                     (satir.get("cinsiyet") or "").strip(),
+                     (satir.get("dogum_yeri") or "").strip(),
+                     (satir.get("belge_turu") or "").strip())
+                )
+            else:
+                ad_soyad = satir[0].strip()
+                if not ad_soyad:
+                    raise ValueError("Misafir adı boş olamaz.")
+                tc_no = satir[1] if len(satir) > 1 else ""
+                fiyat_tipi = satir[2] if len(satir) > 2 else None
+                ucret = satir[3] if len(satir) > 3 else None
+                cur.execute(
+                    "INSERT INTO misafirler (rezervasyon_oda_id, ad_soyad, tc_no, sira_no, fiyat_tipi, gecelik_ucret) "
+                    "VALUES (?,?,?,?,?,?)",
+                    (ro_id, ad_soyad, tc_no, i, fiyat_tipi, ucret)
+                )
         yeni_kisi = max(len(misafir_listesi), 1)
         cur.execute("UPDATE rezervasyon_odalar SET kisi_sayisi=? WHERE id=?", (yeni_kisi, ro_id))
         conn.commit()
@@ -1139,18 +1184,57 @@ def _odemeleri_yeniden_kur(cur, ro, yeni_giris_tarihi, yeni_gece_sayisi):
     return dusen_odenmis
 
 
+def _odasi_max_gece_cur(cur, oda_id, haric_ro_id, yeni_giris_tarihi):
+    """Bir oda satırının girişi yeni_giris_tarihi'ne alınırsa, odadaki diğer
+    rezervasyonlarla çakışmadan sığabilecek EN FAZLA gece sayısı.
+    0 = o tarihte hiç gece sığmaz. Aynı cursor üzerinden çalışır.
+    Kural: başka bir satır giriş gününü İŞGAL ediyorsa (başladı ve henüz çıkmadı) 0;
+    ileride başlayan satır varsa yeni giriş ile başlangıcı arasına sınırlanır."""
+    satirlar = cur.execute("""
+        SELECT ro.giris_tarihi, ro.gece_sayisi,
+               COALESCE(NULLIF(ro.cikis_tarihi, ''),
+                        date(ro.giris_tarihi, '+' || ro.gece_sayisi || ' day')) as ef_cikis
+        FROM rezervasyon_odalar ro
+        JOIN rezervasyonlar r ON ro.rezervasyon_id = r.id
+        WHERE ro.oda_id=? AND r.iptal=0 AND ro.id!=?
+    """, (oda_id, haric_ro_id)).fetchall()
+    g = datetime.strptime(yeni_giris_tarihi, "%Y-%m-%d").date()
+    limit = 365
+    for s in satirlar:
+        sect = datetime.strptime(s["giris_tarihi"], "%Y-%m-%d").date()
+        ecik = datetime.strptime(s["ef_cikis"], "%Y-%m-%d").date()
+        if ecik > g:
+            if sect > g:
+                limit = min(limit, (sect - g).days)
+            else:
+                return 0
+    return max(limit, 0)
+
+
+def odasi_max_gece(ro_id, yeni_giris_tarihi):
+    """UI için: giriş yeni_giris_tarihi'ne alınırsa sığabilecek en fazla gece."""
+    conn = get_connection()
+    try:
+        ro = conn.execute("SELECT oda_id FROM rezervasyon_odalar WHERE id=?", (ro_id,)).fetchone()
+        if not ro:
+            raise ValueError("Oda satırı bulunamadı.")
+        return _odasi_max_gece_cur(conn.cursor(), ro["oda_id"], ro_id, yeni_giris_tarihi)
+    finally:
+        conn.close()
+
+
 def rezervasyon_odasi_tarih_degistir(ro_id, yeni_giris_tarihi, yeni_gece_sayisi):
     """Bir oda satirinin tarih/gece sayısını değiştirir (ODA BAZLI).
-    Yeni tarih geçmişte olamaz. Yeni aralıkta o odada çakışan başka rezervasyon
-    engellenir. Ödemeler yeniden kurulur; ödenmiş geceler tarih eşleşmesine göre
-    korunur. Düşen ödenmiş gecelerin tarihleri döndürülür.
+    Yeni aralıkta o odada çakışan başka rezervasyon engellenir. Ödemeler yeniden
+    kurulur; ödenmiş geceler tarih eşleşmesine göre korunur. Düşen ödenmiş
+    gecelerin tarihleri döndürülür.
+
+    BAŞLAMIŞ KONAKLAMA: giriş tarihi geçmişte olan satırda giriş SABİTTİR;
+    yalnızca gece sayısı uzatılabilir/kısaltılabilir (misafir zaten içeride).
 
     NOT: Eski modeldeki 'oda değişikliği dengesi' (iki rezervasyonu birbirine
-    bağlama) mantığı kaldirildi: artiк her oda satiri tamamen bağımsız."""
+    bağlama) mantığı kaldirildi: artık her oda satiri tamamen bağımsız."""
     bugun = date.today().isoformat()
-    if yeni_giris_tarihi < bugun:
-        raise ValueError("Geçmiş tarihe rezervasyon taşınamaz.")
-
     conn = get_connection()
     try:
         cur = conn.cursor()
@@ -1166,11 +1250,25 @@ def rezervasyon_odasi_tarih_degistir(ro_id, yeni_giris_tarihi, yeni_gece_sayisi)
         if not ust:
             raise ValueError("Rezervasyon bulunamadı veya iptal edilmiş.")
 
+        if yeni_giris_tarihi < bugun:
+            if yeni_giris_tarihi != ro["giris_tarihi"]:
+                raise ValueError("Geçmiş tarihe rezervasyon taşınamaz.")
+        elif ro["giris_tarihi"] < bugun:
+            # Konaklama başlamış: giriş tarihi bozulmadan sadece gece uzat/kısalt
+            if yeni_giris_tarihi != ro["giris_tarihi"]:
+                raise ValueError("Konaklama başlamış; giriş tarihi değiştirilemez, "
+                                 "yalnızca gece sayısı uzatılabilir/kısaltılabilir.")
+
         cakisma = _musaitlik_sorgusu(cur, ro["oda_id"], yeni_giris_tarihi, yeni_gece_sayisi,
                                      haric_ro_id=ro_id)
         if cakisma:
             isimler = ", ".join(c["ad_soyad"] for c in cakisma)
-            raise ValueError(f"Bu tarihler odada dolu: {isimler}.")
+            max_gece = _odasi_max_gece_cur(cur, ro["oda_id"], ro_id, yeni_giris_tarihi)
+            mesaj = f"Bu tarihler odada dolu: {isimler}."
+            if max_gece > 0:
+                mesaj += (f" Bu girişte çakışmadan en fazla {max_gece} gece sığar; "
+                          f"gece sayısını azaltıp tekrar deneyebilirsin.")
+            raise ValueError(mesaj)
 
         dusen_odenmis = _odemeleri_yeniden_kur(cur, ro, yeni_giris_tarihi, yeni_gece_sayisi)
         cur.execute(

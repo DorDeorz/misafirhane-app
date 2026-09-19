@@ -3,6 +3,70 @@
 Bu dosya, evdeki masaüstü bilgisayardaki opencode oturumunun kaldığı yerden devam
 edebilmesi için hazırlandı. İlk iş olarak okuyun.
 
+## DEVAM (19 Eylül 2026) — 1.0.4
+
+Bir sonraki oturum şunları bilir (hepsi commit/push edildi):
+
+### KBS (1774 sayılı Kanun) — `kbs.py`, `kbs_pencere.py` (YENİ dosyalar, git'e eklendi)
+- `kbs.py`: `tanitim_kodu_gecerli_mi` (11 hane + rakam -> "yerli", yabancı -> "yabanci"),
+  `YABANCI_ALANLAR` (uyruk, dogum_tarihi, cinsiyet, dogum_yeri, belge_turu).
+- `kbs_pencere.py`: `KbsPencere(db_yolu=None, parent=None, takip_yolu=None)` —
+  bekleyen giriş (check-in'li yabancı) ve çıkış (o gün çıkacak) bildirimleri,
+  şahıs TC doğrulaması, "Gönderildi" işaretleme, Excel çıktısı, genel özet.
+  Takip `kbs_takip.db` (VERI_KLASORU) içinde; uygulama yeniden açılınca korunur.
+- `main.py`: üst barda `kbs_btn = "🛂 KBS Bildirimi"` -> `kbs_penceresini_ac()`
+  (takip_yolu=os.path.join(database.VERI_KLASORU, "kbs_takip.db")). `database.py`
+  değişti (kullanıcı/odalar özetleri, excel kullanımı).
+- Yabancı alan toplama: `YabanciBilgiDialog` (detay_dialog.py); check-in'de eksik
+  bilgi girilirse kayıt engellenir; detay "Odada Kalan Misafirler" tablosu 9->5
+  sütuna sadeleşti (Oda, Ad Soyad, Belge No, Yerli/Yabancı, Yabancı Bilgisi).
+- TC doğrulama: yerli 11 hane rakam; yabancı belge no max 32 karakter.
+
+### Test veritabanı (yerel, gitignore'lu — asla push EDİLMEZ)
+- `misafirhane_deneme.db`: kullanıcılar canlıdan kopyalandı (`oğuz` korundu),
+  18 oda, senaryolar rez 1001-1008 / ro 2001-2012. Geçerli TC'ler: Ahmet
+  `10000000146`, Ayşe `10000000528`, Hasan `10000000900`; bozuk: `11111111111` (Veli).
+  Bekleyen KBS: 6 giriş + 2 çıkış. Araçlar temp'te: `kbs_musteri_db_olustur.py`,
+  `kbs_sok_test.py`, `ui_sok_test.py`, `coklu_test.py`, `buton_test.py`,
+  `gece_ui_test.py`.
+- Canlı DB `%LOCALAPPDATA%\Misafirhane\misafirhane.db`'e dokunulmadı. Launcher:
+  `Temp\opencode\dev_canli_calistir.py` (test DB'ye yönlü).
+
+### Arayüz yeniden tasarımı (laptop dostu / tutarlı)
+- `tema.py`: `rozet(metin, renk)` ortak rozet + kompakt QSS (aydınlık+karanlık):
+  sekme 6px 10px, QGroupBox margin-top 9/padding 6 8, buton min-height 24,
+  giriş padding 3 7.
+- `detay_dialog.py` RezervasyonDetayDialog: tek satır kompakt başlık (ad + durum
+  rozeti + oda + tarih/gece + alınma), QSplitter (sol: misafir formu max 360,
+  sağ: odalar + odada kalanlar), alt aksiyon çubuğu (İptal / Kapat / 💾 Kaydet birincil).
+- Oda işlemleri tablodan çıkarıldı -> satır seçimi + tablo ALTI aksiyon çubuğu:
+  👥 Kişiler/Check-in · 🛏 +1 Gece · 🛏 −1 Gece · 🗓 Tarih / Gece · 🔁 Oda Değiştir ·
+  🚪 Çıkış Yap (birincil). `_oda_secim_degisti` / `_secili_oda` / `_oda_gece_degistir`.
+- CheckinDialog kompakt (720x480), "Check-in'i Tamamla" birincil; satır yüksekliği 34.
+- `main.py`: Checkin/Çıkış/Yeni Oda/Fiyat Kaydet butonları `birincil`; OdaDurumu
+  çift `ozet_label` hatası giderildi; "Şu an: admin" sabit yazısı -> gerçek
+  kullanıcı; tüm sekmelere tutarlı `layout.setSpacing(6)`; RezervasyonYonetimi
+  bilgi metni netleştirildi.
+
+### Gece uzat / kısalt + çakışmada gece azaltma önerisi
+- `repository.py` `rezervasyon_odasi_tarih_degistir`: başlamış konaklamada (giriş
+  geçmişte) giriş SABİT, yalnızca gece değişebilir; eski "Geçmiş tarihe taşınamaz"
+  bloğu buna göre gevşetildi. Çakışma hatası artık "en fazla N gece sığar" önerisi
+  verir. Yeni: `_odasi_max_gece_cur` / `odasi_max_gece(ro_id, yeni_giris)`.
+- `detay_dialog.py`: `_tarih_degistir_akisi(ebeveyn, ro, giris, gece)` ortak akış —
+  çakışırsa "gece sayısını N'e düşürmen gerekir, onaylıyor musun?" -> Evet -> N ile
+  uygulanır; düşen ödenmiş geceler uyarısı korunur. `OdaTarihDialog` ("Tarih / Gece
+  Düzenle"): canlı önizleme (yeni çıkış, çakışma, en fazla sığan gece), başlamış
+  konaklamada giriş kilitli. Detayda 🛏 +1 / −1 Gece hızlı düğmeleri.
+- Test kanıtı: 2001 (içeride) gece 3->4->3; 2010 giriş +1 gün, 2 gece istenince
+  Ahmet ile çakışma -> önerilen 1 gece onayla uygulandı.
+
+### Sürüm ve dağıtım
+- `versiyon.py` `SURUM = "1.0.4"` + YENILIKLER girdisi. README.md baştan yazıldı
+  (her şey teker teker). DEVAM.md bu bölüm. `Misafirhane_1.0.4.exe` (tek dosyalık
+  derleme) repoya eklendi. Güncelleme/kurulum exe'leri Releases içindir
+  (makinede `gh` ve ISCC yoktu; tek dosya exe repo kökünde).
+
 ## Sürüm şeması (kullanıcı kararı)
 - Büyük/belirgin özellik güncellemesi: 1.0.2 -> 1.0.3
 - Yayınlanmış sürümde hata düzeltmesi: sona bir sayı eklenir: 1.0.2 -> 1.0.2.1 -> 1.0.2.2

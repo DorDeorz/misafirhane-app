@@ -5,7 +5,7 @@
 Her sürümde SURUM arttirilir; guncelleme aracı ve kurulum paketi bu değeri kullanır."""
 
 UYGULAMA_ADI = "Misafirhane Rezervasyon"
-SURUM = "1.0.3"
+SURUM = "1.0.4"
 
 YENILIKLER = {
     "1.0.0": "İlk yayın sürümü. Rezervasyon, oda durumu, takvim, rapor ve yedekleme.",
@@ -26,6 +26,18 @@ YENILIKLER = {
              "yenileme + toplu sorgular ile büyük listelerde kasma giderildi). "
              "Düzeltmeler: Oda Değiştir / Tarih Değiştir pencerelerinin açılmama "
              "hatası, iptal listesinde satır renklendirme çökmesi.",
+    "1.0.4": "KBS Bildirimi (1774 sayılı Kanun / Kimlik Bildirme Sistemi): ana "
+             "pencerede '🛂 KBS Bildirimi' penceresi — bekleyen giriş/çıkışlar, "
+             "şahıs TC kontrolü, gönderildi işaretleme, takip veritabanı ve Excel "
+             "dışa aktarma. Yabancı misafirler için KBS zorunlu alanların check-in'de "
+             "toplanması (uyruk, doğum tarihi/bilinmiyor, cinsiyet, doğum yeri, belge "
+             "türü) ve eksik bilgi uyarıları. Geçersiz TC No check-in'de engellenir. "
+             "Arayüz yeniden tasarlandı (laptop dostu): rezervasyon detayı kompakt "
+             "başlık + splitter düzeni, oda işlemleri tablo içinden seçime dayalı "
+             "aksiyon çubuğuna taşındı (butonlar hep tam görünür), ortak rozetler ve "
+             "kompakt tema. Gece sayısı uzatma/kısaltma artık içerideki misafir için "
+             "de çalışır; tarih değişikliği çakıştığında 'gece sayısını azalt' önerisi "
+             "ve onay akışı eklendi.",
 }
 
 

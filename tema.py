@@ -121,6 +121,22 @@ def renklendir(item, arka_plan, yazi=None):
     item.setForeground(yazi)
 
 
+def rozet(metin, renk, yazi_rengi=None):
+    """Renkli 'rozet' (etiket) döndürür — durum/uyarı bildirimleri için ortak bileşen.
+    Aydınlık ya da karanlık temada okunur: metin rengi zemin parlaklığına göre seçilir."""
+    from PySide6.QtWidgets import QLabel
+    zemin = renk if isinstance(renk, QColor) else QColor(renk)
+    if yazi_rengi is None:
+        yazi_rengi = hucre_yazi_rengi(zemin)
+    etiket = QLabel(metin)
+    etiket.setStyleSheet(
+        "background-color:%s; color:%s; border-radius:9px; "
+        "padding:2px 10px; font-weight:700; font-size:11px;"
+        % (zemin.name(), yazi_rengi.name())
+    )
+    return etiket
+
+
 # ============================================================
 # STİL SUNUMLARI (QSS) — modern, palet ile uyumlu görünüm
 # Not: QSpinBox/QComboBox/QDateEdit'in ALT BUTONLARI stil
@@ -135,7 +151,7 @@ _AYDINLIK_QSS = """
 QTabWidget::pane { border: none; background: transparent; }
 QTabBar::tab {
     background: transparent; color: #556070;
-    padding: 7px 12px; margin-right: 2px; border: none;
+    padding: 6px 10px; margin-right: 2px; border: none;
     border-bottom: 2px solid transparent; border-top-left-radius: 6px; border-top-right-radius: 6px;
 }
 QTabBar::tab:selected { color: #16233a; font-weight: 700; border-bottom: 2px solid #2f6fed; }
@@ -143,21 +159,21 @@ QTabBar::tab:hover:!selected { background: rgba(47, 111, 237, 0.08); }
 
 QGroupBox {
     border: 1px solid #dce1e9; border-radius: 10px;
-    margin-top: 12px; padding: 8px 8px 8px 8px;
+    margin-top: 9px; padding: 6px 8px 8px 8px;
     background-color: palette(Base);
 }
 QGroupBox::title {
-    subcontrol-origin: margin; left: 12px; padding: 0 6px;
+    subcontrol-origin: margin; left: 10px; padding: 0 5px;
     color: #2b3a55; font-weight: 700;
 }
 
-QPushButton { padding: 5px 11px; border-radius: 6px; border: 1px solid #cdd3dd; background: palette(Button); }
+QPushButton { padding: 5px 11px; min-height: 24px; border-radius: 6px; border: 1px solid #cdd3dd; background: palette(Button); }
 QPushButton:hover { background: palette(Midlight); }
 QPushButton:pressed { background: palette(Mid); }
 QPushButton:disabled { color: #9aa3af; border-color: #e0e4ea; }
 QPushButton#birincil {
     background: #2f6fed; color: #ffffff; font-weight: 700;
-    border: none; padding: 7px 16px; border-radius: 7px;
+    border: none; padding: 6px 16px; border-radius: 7px;
 }
 QPushButton#birincil:hover { background: #245cd0; }
 QPushButton#birincil:pressed { background: #1c4db3; }
@@ -168,18 +184,18 @@ QPushButton#ikincil:hover { background: rgba(47, 111, 237, 0.08); }
 QHeaderView::section {
     background-color: #edf0f5; color: #334155;
     border: none; border-bottom: 1px solid #d7dce5; border-right: 1px solid #e2e7ee;
-    padding: 5px 8px; font-weight: 600;
+    padding: 4px 7px; font-weight: 600;
 }
 QTableCornerButton::section { background-color: #edf0f5; border: none; border-bottom: 1px solid #d7dce5; }
 QTableWidget { gridline-color: #e6e9ef; alternate-background-color: palette(AlternateBase); }
 QTableWidget::item:selected { background: palette(Highlight); color: palette(HighlightedText); }
 
 QLineEdit, QTextEdit, QPlainTextEdit {
-    border: 1px solid #cdd3dd; border-radius: 7px; padding: 4px 8px;
+    border: 1px solid #cdd3dd; border-radius: 7px; padding: 3px 7px;
     background-color: palette(Base); color: palette(Text);
 }
 QLineEdit:focus, QTextEdit:focus, QPlainTextEdit:focus { border: 1px solid #2f6fed; }
-QComboBox, QSpinBox, QDateEdit { padding: 4px 8px; }
+QComboBox, QSpinBox, QDateEdit { padding: 3px 7px; }
 QCheckBox, QRadioButton { spacing: 6px; }
 QSplitter::handle { background-color: #e4e8ee; }
 
@@ -210,7 +226,7 @@ _KARANLIK_QSS = """
 QTabWidget::pane { border: none; background: transparent; }
 QTabBar::tab {
     background: transparent; color: #9fb0c4;
-    padding: 7px 12px; margin-right: 2px; border: none;
+    padding: 6px 10px; margin-right: 2px; border: none;
     border-bottom: 2px solid transparent; border-top-left-radius: 6px; border-top-right-radius: 6px;
 }
 QTabBar::tab:selected { color: #ffffff; font-weight: 700; border-bottom: 2px solid #3b82f6; }
@@ -218,21 +234,21 @@ QTabBar::tab:hover:!selected { background: rgba(59, 130, 246, 0.12); }
 
 QGroupBox {
     border: 1px solid #3d4550; border-radius: 10px;
-    margin-top: 12px; padding: 8px 8px 8px 8px;
+    margin-top: 9px; padding: 6px 8px 8px 8px;
     background-color: palette(Base);
 }
 QGroupBox::title {
-    subcontrol-origin: margin; left: 12px; padding: 0 6px;
+    subcontrol-origin: margin; left: 10px; padding: 0 5px;
     color: #dbe3ee; font-weight: 700;
 }
 
-QPushButton { padding: 5px 11px; border-radius: 6px; border: 1px solid #49525e; background: palette(Button); }
+QPushButton { padding: 5px 11px; min-height: 24px; border-radius: 6px; border: 1px solid #49525e; background: palette(Button); }
 QPushButton:hover { background: palette(Midlight); }
 QPushButton:pressed { background: palette(Mid); }
 QPushButton:disabled { color: #6d7886; border-color: #39404b; }
 QPushButton#birincil {
     background: #3b82f6; color: #ffffff; font-weight: 700;
-    border: none; padding: 7px 16px; border-radius: 7px;
+    border: none; padding: 6px 16px; border-radius: 7px;
 }
 QPushButton#birincil:hover { background: #3475d9; }
 QPushButton#birincil:pressed { background: #2d66bd; }
@@ -243,18 +259,18 @@ QPushButton#ikincil:hover { background: rgba(59, 130, 246, 0.12); }
 QHeaderView::section {
     background-color: #353a43; color: #dbe3ee;
     border: none; border-bottom: 1px solid #474e59; border-right: 1px solid #414852;
-    padding: 5px 8px; font-weight: 600;
+    padding: 4px 7px; font-weight: 600;
 }
 QTableCornerButton::section { background-color: #353a43; border: none; border-bottom: 1px solid #474e59; }
 QTableWidget { gridline-color: #3a414c; alternate-background-color: palette(AlternateBase); }
 QTableWidget::item:selected { background: palette(Highlight); color: palette(HighlightedText); }
 
 QLineEdit, QTextEdit, QPlainTextEdit {
-    border: 1px solid #4a5260; border-radius: 7px; padding: 4px 8px;
+    border: 1px solid #4a5260; border-radius: 7px; padding: 3px 7px;
     background-color: palette(Base); color: palette(Text);
 }
 QLineEdit:focus, QTextEdit:focus, QPlainTextEdit:focus { border: 1px solid #3b82f6; }
-QComboBox, QSpinBox, QDateEdit { padding: 4px 8px; }
+QComboBox, QSpinBox, QDateEdit { padding: 3px 7px; }
 QCheckBox, QRadioButton { spacing: 6px; }
 QSplitter::handle { background-color: #333a44; }
 
