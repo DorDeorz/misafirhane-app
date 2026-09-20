@@ -2,7 +2,7 @@
 
 Küçük işletmeler ve misafirhaneler için **internetsiz çalışan** masaüstü rezervasyon yönetim sistemi. Oda durumunu, giriş-çıkışları, misafir kayıtlarını, ödemeleri, gelir raporlarını ve **KBS bildirimlerini** tek ekrandan takip eder.
 
-> Bu depo **gizli (private)** bir projedir. Uygulama Python + Qt (PySide6) ile yazılmıştır ve Windows için derlenmiş (exe) olarak dağıtılır.
+> Bu depo **açık (public)** bir projedir; gerçek kullanıcı verisi (`*.db`, yedekler) `.gitignore` ile hariç tutulur ve asla push edilmez. Uygulama Python + Qt (PySide6) ile yazılmıştır ve Windows için derlenmiş (exe) olarak dağıtılır.
 
 ## Ne yapar?
 
@@ -149,6 +149,7 @@ kurulum.iss            Inno Setup kurulum betiği
 
 | Sürüm | Not |
 |-------|-----|
+| 1.0.4.4 | **Erken Çıkış + hata düzeltmeleri**: Çıkış sekmesine, planlı çıkışı bugün olmayan ama hâlâ konaklayan misafirleri listeleyen "Erken Çıkışlar" bölümü eklendi (ödenmemiş borç gösterimiyle). Rezervasyon detayında "+1/-1 Gece" butonları artık pencereyi kapatmıyor ve çakışma durumunda net uyarı veriyor. Kurulum Aracı mesajı sadeleşti. Düzeltmeler: içerideki misafirin rezervasyonu iptal edilemiyor, check-in ekranında "Sil" butonu, aynı gün check-in kilidi, gece uzatmada kişi bazlı fiyat, erken çıkışta gelecek ödemelerin temizlenmesi, çıkış sonrası oda durumunun "temizlikte" olması, telefon +90 doğrulama, KBS ve diğer Excel raporlarında formül enjeksiyonu koruması, güncelleme aracı sürüm kontrolü ve daha fazlası. |
 | 1.0.4.3 | **Kod incelemesi ve hata düzeltmeleri**: Oda değiştirmede KBS'ye özgü hatalar giderildi — yabancı misafir bilgileri artık kaybolmuyor, aynı misafir için mükerrer KBS giriş bildirimi ve yanlış "bugün çıkıyor" görünümü düzeldi; KBS "gönderildi" takibi artık misafir bazlı; yerli/yabancı sınıflandırması ve T.C. Kimlik No doğrulaması güçlendirildi (gerçek sağlama algoritması); KBS Excel çıktısına formül enjeksiyonu koruması eklendi. Çok odalı rezervasyonda "Oda Değiştir" çökmesi düzeltildi. Güncelleme aracı hataları artık sessizce yutmuyor. |
 | 1.0.4.2 | **Kurulum Aracı — veri silme seçeneği**: Kaldırma sırasında "veritabanını ve verileri de silmek ister misiniz?" sorulur (Evet → `%LOCALAPPDATA%\Misafirhane` kalıcı silinir, Hayır → veriler korunur, İptal → kaldırma iptal). Veri silme yalnızca kaldırma başarıyla bitince yapılır. |
 | 1.0.4.1 | **Kurulum Aracı** (tek exe): Yükle / Güncelle / Tamir Et / Kaldır; programın durumu otomatik algılanır, gömülü kurulum UAC ile çalışır; arayüz Windows'un koyu/açık mod ayarına göre otomatik tema seçer; kaldırma sırasında veriler korunur. Eski hibrit `Misafirhane_Kurulum` exe'sinin yerine geçer. |

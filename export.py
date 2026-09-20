@@ -14,6 +14,22 @@ import repository
 from database import fiyat_tipi_goster
 
 
+_TEHLIKELI_ON_EK = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _guvenli_hucre(deger):
+    """Excel formül enjeksiyonuna karşı: elle girilen (ad soyad, TC/belge no,
+    telefon, referans, not gibi) hücre değerleri '='/'+'/'-'/'@' ile başlıyorsa
+    Excel bunu formül sanmasın diye başına tek tırnak eklenir (bkz. kbs.py
+    _guvenli_hucre — aynı koruma burada da uygulanır)."""
+    if deger is None:
+        return deger
+    s = str(deger)
+    if s.startswith(_TEHLIKELI_ON_EK):
+        return "'" + s
+    return s
+
+
 def _baslik_satiri_yaz(ws, basliklar):
     ws.append(basliklar)
     for col in range(1, len(basliklar) + 1):
@@ -49,11 +65,11 @@ def rezervasyonlari_disa_aktar(dosya_yolu, durum="aktif", satirlar=None):
         fiyat_birimleri = sorted({fiyat_tipi_goster(t) for t in o.get("fiyat_tipleri", set())})
         fiyat_metni = " + ".join(fiyat_birimleri) if fiyat_birimleri else "-"
         ws.append([
-            r["id"], r["oda_ozeti"] or "-", r["ad_soyad"], r["tc_no"] or "",
-            r["telefon"] or "", r["toplam_kisi"], r["giris_tarihi"], r["toplam_gece"],
+            r["id"], r["oda_ozeti"] or "-", _guvenli_hucre(r["ad_soyad"]), _guvenli_hucre(r["tc_no"] or ""),
+            _guvenli_hucre(r["telefon"] or ""), r["toplam_kisi"], r["giris_tarihi"], r["toplam_gece"],
             r["cikis_tarihi"] or "", fiyat_metni, toplam,
-            r["referans"] or "", r["oda_sayisi"], r["olusturan_kullanici"] or "",
-            r["olusturma_tarihi"] or "", r["durum_etiket"] or "", r["notlar"] or ""
+            _guvenli_hucre(r["referans"] or ""), r["oda_sayisi"], r["olusturan_kullanici"] or "",
+            r["olusturma_tarihi"] or "", r["durum_etiket"] or "", _guvenli_hucre(r["notlar"] or "")
         ])
 
     for col_letter, genislik in zip(
@@ -92,7 +108,7 @@ def gunluk_durumu_disa_aktar(dosya_yolu, tarih_str):
                 durum_metni = "Boş"
         ws.append([
             r["kat_adi"], r["oda_no"], durum_metni,
-            r["ad_soyad"] or "", r["tc_no"] or "", r["telefon"] or "",
+            _guvenli_hucre(r["ad_soyad"] or ""), _guvenli_hucre(r["tc_no"] or ""), _guvenli_hucre(r["telefon"] or ""),
             r["kisi_sayisi"] or "", fiyat_tipi_goster(r["fiyat_tipi"]) or "",
             r["tutar"] or "", "Ödendi" if r["odendi"] else ("Ödenmedi" if dolu_mu else ""),
             r["odeme_sekli"] or ""
@@ -156,7 +172,7 @@ def tarih_araligi_raporu_disa_aktar(dosya_yolu, baslangic_str, bitis_str):
                     durum_metni = "Boş"
             ws.append([
                 gun_str, r["kat_adi"], r["oda_no"], durum_metni,
-                r["ad_soyad"] or "", r["tc_no"] or "", r["telefon"] or "",
+                _guvenli_hucre(r["ad_soyad"] or ""), _guvenli_hucre(r["tc_no"] or ""), _guvenli_hucre(r["telefon"] or ""),
                 r["kisi_sayisi"] or "", fiyat_tipi_goster(r["fiyat_tipi"]) or "",
                 r["tutar"] or "", "Ödendi" if r["odendi"] else ("Ödenmedi" if dolu_mu else ""),
                 r["odeme_sekli"] or ""

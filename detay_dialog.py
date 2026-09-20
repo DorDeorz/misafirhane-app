@@ -112,8 +112,7 @@ class OdaTarihDialog(QDialog):
         self.setWindowTitle(f"Tarih / Gece Düzenle - {ro_row['kat_adi']} Oda {ro_row['oda_no']}")
         self.setMinimumWidth(460)
 
-        bugun = date.today().isoformat()
-        self.iceride_mi = ro_row["giris_tarihi"] < bugun
+        self.iceride_mi = bool(ro_row["checkin_yapildi"])
 
         layout = QVBoxLayout(self)
         baslik = QLabel(
@@ -620,9 +619,43 @@ class RezervasyonDetayDialog(QDialog):
         if yeni_gece < 1:
             QMessageBox.warning(self, "Gece Sayısı", "Gece sayısı en az 1 olabilir.")
             return
+        if delta > 0:
+            # Sadece UZATMA: hemen ertesi günde başka bir rezervasyon varsa genel
+            # "gece azaltma önerisi" akışı anlamsız bir diyalog gösterirdi (önerilen
+            # sayı zaten mevcut gece sayısına eşit olurdu, çünkü hiç büyüme yeri
+            # yok). Bu yüzden burada net ve doğrudan bir "eklenemiyor" uyarısı
+            # gösterip akışı burada durduruyoruz.
+            cakisma = repository.musaitlik_kontrol(
+                o["oda_id"], o["giris_tarihi"], yeni_gece, haric_ro_id=o["id"])
+            if cakisma:
+                isimler = ", ".join(c["ad_soyad"] for c in cakisma[:3])
+                QMessageBox.warning(
+                    self, "Gece Eklenemiyor",
+                    f"Bu odada ertesi gün {isimler} rezervasyonu var; daha fazla gece eklenemiyor."
+                )
+                return
         if _tarih_degistir_akisi(self, o, o["giris_tarihi"], yeni_gece):
             self.kaydedildi = True
-            self.accept()
+            # Pencereyi KAPATMADAN içeriği yenile: kullanıcı arka arkaya birden
+            # fazla kez +1/-1 Gece'ye basabilsin diye (öncesinde her tıklamada
+            # pencere kapanıp yeniden açmak gerekiyordu).
+            self._yenile(secili_oda_id=o["id"])
+
+    def _yenile(self, secili_oda_id=None):
+        """Rezervasyon/oda verilerini yeniden okuyup arayüzü aynı pencerede
+        yeniden kurar (kapatmadan). secili_oda_id verilirse yeniden kurulduktan
+        sonra o oda satırı tekrar seçili hale getirilir."""
+        self.rez = repository.rezervasyon_getir(self.rez_id)
+        self.odalar = repository.rezervasyon_odalar_listele(self.rez_id)
+        eski_layout = self.layout()
+        if eski_layout is not None:
+            QWidget().setLayout(eski_layout)
+        self._arayuzu_kur()
+        if secili_oda_id is not None:
+            for i, satir in enumerate(self.oda_satirlari):
+                if satir["id"] == secili_oda_id:
+                    self.odalar_tablo.selectRow(i)
+                    break
 
     # ---------------- oda bazlı aksiyonlar ----------------
     def _odada_kisiler(self, ro_id):
@@ -653,19 +686,29 @@ class RezervasyonDetayDialog(QDialog):
             self.accept()
 
     def _odada_cikis(self, ro_row):
+        bugun = date.today().isoformat()
+        borc = repository.odasi_odenmemis_tutar(ro_row["id"], kesim_tarihi=bugun)
+        borc_metni = (f"\n\n⚠ Ödenmemiş borç: {borc:,}₺" if borc else "\n\nÖdenmemiş borcu yok.")
         cevap = QMessageBox.question(
             self, "Çıkış İşlemi",
             f"{ro_row['kat_adi']} - Oda {ro_row['oda_no']}'daki misafir çıkış yaptı mı? "
-            "İşlem sonrası oda 'temiz' durumuna alınır.",
+            "İşlem sonrası oda 'temizlikte' durumuna alınır." + borc_metni,
             QMessageBox.Yes | QMessageBox.No
         )
         if cevap != QMessageBox.Yes:
             return
         try:
-            repository.odasi_cikis_yap(ro_row["id"])
+            dusen_odenmis = repository.odasi_cikis_yap(ro_row["id"])
         except ValueError as e:
             QMessageBox.warning(self, "Çıkış Yapılamadı", str(e))
             return
+        if dusen_odenmis:
+            QMessageBox.information(
+                self, "Önceden Ödenmiş Geceler",
+                "Şu geceler için daha önce ödeme alınmıştı ama misafir planlanandan "
+                "erken çıktı (ödendi bilgisi korundu, tutar iade edilmedi):\n"
+                + ", ".join(dusen_odenmis),
+            )
         self.kaydedildi = True
         self.accept()
 
@@ -915,7 +958,7 @@ class CheckinDialog(QDialog):
 
     def _kisi_sil(self, buton):
         for i, satir in enumerate(self.misafir_satirlari):
-            if satir[6] is buton:
+            if satir[4] is buton:
                 self.misafir_tablo.removeRow(i)
                 del self.misafir_satirlari[i]
                 break
@@ -1016,8 +1059,8 @@ class CheckinDialog(QDialog):
                     return
                 misafir_listesi.append((ad, belge_no, tip, ucret))
 
-        repository.odasi_misafirleri_kaydet(self.ro_id, misafir_listesi, ekstra_yatak=self.ekstra_yatak)
-        repository.odasi_checkin_yap(self.ro_id)
+        repository.odasi_misafirleri_kaydet_ve_checkin(
+            self.ro_id, misafir_listesi, ekstra_yatak=self.ekstra_yatak)
 
         self.kaydedildi = True
         self.accept()

@@ -420,16 +420,19 @@ def kbs_excel_ure(cikti_yolu, db_yolu=None, takip_yolu=None):
     _genislik(ws3, [("A", 34), ("B", 28)])
 
     ws4 = wb.create_sheet("BİLDİRİM GEÇMİŞİ")
-    _baslik_satiri(ws4, ["Kesit", "Tür", "Durum", "Zaman"])
+    _baslik_satiri(ws4, ["Tür", "Ad Soyad", "T.C. Kimlik / Belge No", "Kat / Oda", "Tarih", "Durum", "Zaman"])
     takip = _takip_baglan(takip_yolu or TAKIP_DOSYASI)
     try:
         for row in takip.execute(
-                "SELECT kesit, tur, durum, zaman FROM bildirimler "
+                "SELECT tur, misafir_ad, tc_no, oda, tarih, durum, zaman FROM bildirimler "
                 "WHERE durum='gonderildi' ORDER BY zaman DESC"):
-            ws4.append([row["kesit"], row["tur"], row["durum"], row["zaman"]])
+            ws4.append([
+                row["tur"], _guvenli_hucre(row["misafir_ad"]), _guvenli_hucre(row["tc_no"]),
+                row["oda"], row["tarih"], row["durum"], row["zaman"],
+            ])
     finally:
         takip.close()
-    _genislik(ws4, [("A", 30), ("B", 8), ("C", 12), ("D", 20)])
+    _genislik(ws4, [("A", 8), ("B", 24), ("C", 20), ("D", 16), ("E", 12), ("F", 12), ("G", 20)])
 
     wb.save(cikti_yolu)
     return len(giris), len(cikis)

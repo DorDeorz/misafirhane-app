@@ -460,11 +460,17 @@ class KurulumAraci:
         kod = calistir_bekle(arac)
         self.root.after(0, self._islem_bitti, islem, kod)
 
+    _ISLEM_SONUC_METNI = {
+        "Yükleme": "Uygulama başarıyla yüklendi.",
+        "Güncelleme": "Uygulama başarıyla güncellendi.",
+        "Tamir (yeniden kurulum)": "Uygulama başarıyla onarıldı.",
+    }
+
     def _islem_bitti(self, islem, kod):
         self.calisiyor = False
         self.bilgi = kurulum_durumu()
         if kod == 0:
-            mesaj = f"Uğurlu olsun: {islem} başarıyla tamamlandı."
+            mesaj = self._ISLEM_SONUC_METNI.get(islem, f"{islem} başarıyla tamamlandı.")
             kutubg, kutufg = TEMA["saglikli_bg"], TEMA["saglikli_fg"]
         elif kod == 2:
             mesaj = "İşlem kullanıcı tarafından iptal edildi."

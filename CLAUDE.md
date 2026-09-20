@@ -295,6 +295,115 @@ Bulunan hataların TAMAMI kullanıcı onayıyla düzeltildi:
 - Uygulama bu makinede `dev_canli_calistir.py` ile test DB'siyle açıldı,
   kullanıcı elle denedi, sorun bildirmedi.
 
+### 1.0.4.4 (laptopta, ev masaüstü DIŞINDA bir makinede Claude ile yapıldı, push edildi)
+
+Bu bölüm **başka bir Claude Code oturumu** (Claude Sonnet 5, laptop/ev masaüstü
+dışındaki bir makine) tarafından yapıldı. Kullanıcı önce "projeyi baştan aşağı
+oku, anla, hataları/eksikleri bul" dedi (bu makinedeki eski/senkronsuz yerel
+kopya `git reset --hard origin/main` ile 1.0.4.3'e eşitlendi, commit'siz iki
+değişiklik — `guncelleme_olustur.py`/`guncelle.py` TAM paket denemesi — bu
+oturumun kendi bulgusuyla çakıştığı için atıldı, GitHub'ın 1.0.4.3 çözümü
+esas alındı). main.py/repository.py/detay_dialog.py iki paralel ajanla
+incelendi, bulunanların TAMAMI kullanıcı onayıyla düzeltildi, ardından
+kullanıcı iki ek özellik + tasarım denemesi istedi (tasarım kullanıcı
+tarafından reddedilip **eski haline geri alındı** — bkz. aşağıda).
+
+**Düzeltilen hatalar (özet):**
+1. **İptal engeli**: `repository.rezervasyon_iptal` artık check-in yapılmış
+   (fiilen içeride, `cikis_tarihi IS NULL`) bir oda varsa `ValueError` fırlatıp
+   iptali reddediyor — önceden böyle bir rezervasyon iptal edilince odası
+   `iptal=0` filtresi yüzünden tüm sorgularda "boş" görünüp ikinci kez
+   satılabiliyordu.
+2. **CheckinDialog "Sil" butonu** hiç çalışmıyordu (`_kisi_sil` yanlışlıkla
+   `satir[6]` yani `bilgi_btn` ile karşılaştırıyordu, `satir[4]`=`sil_btn`
+   olmalıydı) — düzeltildi.
+3. **Aynı gün check-in kilidi**: `rezervasyon_odasi_tarih_degistir` ve
+   `OdaTarihDialog` "konaklama başladı mı" kontrolünü `giris_tarihi < bugun`
+   yerine `checkin_yapildi` bayrağına göre yapıyor artık — bugün check-in
+   yapılmış bir misafirin giriş tarihi eskiden hâlâ değiştirilebiliyordu.
+4. **Kişi bazlı fiyat / gece uzatma**: `rezervasyon_odasi_tarih_degistir`,
+   `_odemeleri_yeniden_kur`'dan sonra `_odeme_tutarlarini_yeniden_hesapla`'yı
+   da çağırıyor — gece uzat/kısalt sonrası "Özel" kişi bazlı fiyatlar artık
+   doğru uygulanıyor (öncesinde ro-seviyesi varsayılan tutara dönüyordu).
+5. **Erken çıkış / oda durumu**: `odasi_cikis_yap` artık (a) odayı `temiz`
+   değil doğru şekilde `temizlikte` yapıyor (housekeeping adımı atlanıyordu),
+   (b) `cikis_tarihi_str`'den sonraki HENÜZ ÖDENMEMİŞ gece kayıtlarını siliyor
+   (İstatistik'teki "beklenen gelir" artık hiç kalınmayacak geceleri
+   saymıyor), (c) önceden ÖDENMİŞ ama artık kapsam dışı kalan geceleri
+   silmeden döndürüyor (UI bilgilendiriyor). Yeni `odasi_odenmemis_tutar()`
+   ile "borç" hesaplanıyor.
+6. **`oda_degistir`** artık hedef oda mevcut odayla aynıysa engelleniyor.
+7. **CheckinDialog artık tek transaction'da**: yeni
+   `odasi_misafirleri_kaydet_ve_checkin()` (eski ayrı
+   `odasi_misafirleri_kaydet` + `odasi_checkin_yap` çağrısının yerini aldı).
+8. **Telefon doğrulama** (`main.py` `_telefon_gecerli_mi`) artık `+90 5xx...`
+   formatını doğru kabul ediyor (eskiden "90" kesilince kalan hane hiç "0"
+   ile başlamadığından her zaman reddediliyordu).
+9. **KBS Excel "Bildirim Geçmişi"** artık kaydedilen tur/misafir/TC/oda/tarih
+   bilgisini gösteriyor (1.0.4.3'te kolonlar eklenmişti ama rapor hâlâ eski
+   4 kolonu yazıyordu). **`export.py`**'nin 3 raporuna da (rezervasyon,
+   günlük durum, tarih aralığı) `kbs.py`'deki formül enjeksiyonu koruması
+   taşındı.
+10. **Güncelleme aracı** (`guncelle.py`): `onceki_surum` kontrolü artık
+    `mevcut` (kurulu sürüm) okunamadığında/boş olduğunda da devreye giriyor
+    (öncesinde bu durumda kontrol tamamen atlanıyordu).
+11. Yeni kullanıcı eklerken şifre uzunluğu (min 4) artık kontrol ediliyor;
+    `main.py`'de 8 yerde sadece `ValueError` yakalanıyordu, artık `Exception`;
+    tutar 0 TL iken hücre boş görünüyordu (`is not None` kontrolü); oda
+    değiştir seçim listesi artık sıra numarasıyla benzersiz.
+12. **Kurulum Aracı**: `_islem_bitti`'deki "Uğurlu olsun: ... tamamlandı"
+    mesajı kaldırıldı, yerine işleme göre "Uygulama başarıyla
+    yüklendi/güncellendi/onarıldı" geldi.
+13. README'deki "bu depo gizli/private" ifadesi düzeltildi (repo gerçekte
+    **public**, `gh repo view` ile doğrulandı).
+
+**Yeni özellikler (kullanıcı isteğiyle):**
+- **Erken Çıkışlar**: `CikisTab`'a, planlı çıkış günü seçili tarih OLMAYAN
+  ama hâlâ check-in'li/çıkışsız olan oda satırlarını listeleyen yeni bir
+  bölüm eklendi (`repository.erken_cikis_adaylari()`). Hem bu listede hem
+  normal "Çıkış Yap" akışında artık ödenmemiş borç (`odasi_odenmemis_tutar`)
+  gösteriliyor ve onay diyaloğunda soruluyor.
+- **Gece +1/-1 butonları artık RezervasyonDetayDialog'u kapatmıyor**:
+  `_yenile()` (layout'u `QWidget().setLayout(...)` hilesiyle temizleyip
+  `_arayuzu_kur()`'u yeniden çağırıyor, seçili oda satırını koruyor) — art
+  arda birden fazla kez tıklanabiliyor. Ayrıca sadece UZATMA (delta>0) için,
+  hemen ertesi günde çakışan bir rezervasyon varsa artık anlamsız bir "gece
+  sayısını N'e düşür" önerisi (N zaten mevcut sayıya eşit oluyordu) yerine
+  net bir "Gece Eklenemiyor: ... rezervasyonu var" uyarısı çıkıyor.
+
+**Denenip geri alınan tasarım değişikliği:** Kullanıcı "genel tasarımı tamamen
+değiştir, modern yap, butonlar biraz büyük olsun, hiçbir yerde kaydırma
+gerekmesin" dedi. `tema.py` (indigo/mor renk paleti, degrade üst bar, büyük
+yuvarlak butonlar/sekmeler), pencere `showMaximized()`, tablo satır
+yükseklikleri büyütüldü. Kullanıcı butonların çok büyük olduğunu söyleyince
+boyutlar küçültüldü (orijinale yakın); ardından **tasarımın tamamını
+beğenmedi ve eski hâline geri döndürülmesini istedi**. `tema.py` şu an
+**origin/main ile birebir aynı** (tek fark: dosya sonu yeni satırı). Pencere
+`showMaximized()` olarak KALDI (kullanıcı bunu ayrıca istedi, sadece bunu).
+Satır yükseklikleri ve `#tehlikeli` obje adları da orijinaline döndürüldü
+(iptal/sil butonları yine `setStyleSheet("color: #c0392b;")` kullanıyor).
+**Sonraki oturum tasarım konusunda temkinli olsun**: kullanıcı büyük/modern
+bir redesign istemiyor, mevcut kompakt görünümden memnun.
+
+**Test:** `py_compile` tüm değişen dosyalarda geçti. Mevcut
+`kbs_test.py`, `oda_degistir_kbs_test.py` (repo) geçti (kbs_test.py'nin son
+satırındaki `✔` karakteri bu makinenin konsol kod sayfasında (cp1254)
+`UnicodeEncodeError` veriyor — TEST BAŞARISIZLIĞI DEĞİL, tüm assertion'lar
+zaten geçmişti, sadece dekoratif son `print()` çöküyor, ortamla ilgili, koddan
+kaynaklanmıyor). Bu oturumda ayrıca özel smoke testler yazıldı (repository
+seviyesinde iptal engeli/borç/erken-çıkış/aynı-gün-kilit/aynı-oda-engeli,
+Qt seviyesinde gece butonlarının pencereyi kapatmaması ve Sil butonu) — hepsi
+geçti, kalıcı repoya eklenmedi (scratchpad'te kaldı, gerekirse tekrar
+yazılabilir). Uygulama bu makinede gerçek arayüzde kullanıcı tarafından
+birkaç kez elle denendi ("bi sıkıntı yaşanmadı").
+
+**Sürüm/release**: `versiyon.py` → 1.0.4.4 + YENILIKLER; README güncellendi.
+`python guncelleme_olustur.py --tam` + Kurulum Aracı + Standalone derlemeleri
+CLAUDE.md madde 6'daki adımlarla üretildi; `Misafirhane_Kurulumu_1.0.4.4.exe`
+kullanıcının Masaüstü'ne kopyalandı. **GitHub Release AÇILMADI** (yalnızca
+kod push edildi + exe'ler yerel/masaüstünde bırakıldı) — kullanıcı ayrıca
+"Release oluştur ve yükle" demedikçe bir sonraki oturum da bunu varsaymasın.
+
 ---
 
 ## 5. GitHub yapısı ve kuralları
@@ -308,8 +417,12 @@ Bulunan hataların TAMAMI kullanıcı onayıyla düzeltildi:
   - v1.0.1 / v1.0.3 → kendi sürüm commit'leri.
   - **1.0.4.3 için release YOK** (kullanıcı özellikle istemedi — sadece kod
     push edildi, `Misafirhane_Kurulumu_1.0.4.3.exe` vb. üretilmedi/yüklenmedi).
-    Yeni bir laptoptan devam ederken bunu unutma: `dist/kurulum` çıktısı bu
-    sürüm için yok, gerekirse 6. maddedeki adımlarla üretilmeli.
+  - **1.0.4.4 için de GitHub Release YOK** — exe'ler (Kurulum Aracı,
+    Güncelleme, Standalone) üretildi ve `Misafirhane_Kurulumu_1.0.4.4.exe`
+    kullanıcının Masaüstü'ne kopyalandı, ama bir GitHub Release AÇILMADI/
+    yüklenmedi (kullanıcı sadece "exe üret + masaüstüme koy" dedi, "release
+    oluştur" demedi). Bir sonraki oturum, kullanıcı ayrıca istemedikçe bunu
+    varsaymasın.
 - Eski release'lerden (`v1.0.1/v1.0.3/v1.0.4`) Inno `Misafirhane_Kurulum_*.exe`
   **silinmedi** (geçmiş sürümlerin tek kurulum yolu — dokunulmadı).
 - **Asla push edilmez:** `*.db` (gerçek/test verileri), `build/`, `dist/`,

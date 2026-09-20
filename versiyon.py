@@ -5,7 +5,7 @@
 Her sürümde SURUM arttirilir; guncelleme aracı ve kurulum paketi bu değeri kullanır."""
 
 UYGULAMA_ADI = "Misafirhane Rezervasyon"
-SURUM = "1.0.4.3"
+SURUM = "1.0.4.4"
 
 YENILIKLER = {
     "1.0.0": "İlk yayın sürümü. Rezervasyon, oda durumu, takvim, rapor ve yedekleme.",
@@ -70,6 +70,33 @@ YENILIKLER = {
                 "Güncelleme aracı artık hataları sessizce yutmuyor, yanlış "
                 "sürümden gelen bir paketi uygulamıyor ve yedekleme "
                 "başarısızlığını kullanıcıya bildiriyor.",
+    "1.0.4.4": "Erken Çıkış: Çıkış sekmesine, planlı çıkış günü bugün olmayan ama "
+                "hâlâ konaklayan misafirleri listeleyen yeni bir 'Erken Çıkışlar' "
+                "bölümü eklendi; hem bu listede hem normal çıkışta ödenmemiş borç "
+                "tutarı gösterilir. Rezervasyon detayında '+1/-1 Gece' butonları "
+                "artık pencereyi kapatmıyor (art arda kullanılabilir) ve önde "
+                "çakışan bir rezervasyon varsa net bir 'gece eklenemiyor' uyarısı "
+                "veriyor. Kurulum Aracı'ndaki 'Uğurlu olsun' mesajı işleme göre "
+                "'Uygulama başarıyla yüklendi/güncellendi/onarıldı' ile değişti. "
+                "Hata düzeltmeleri: check-in yapılmış (fiilen içeride) bir "
+                "rezervasyon artık iptal edilemiyor (önce çıkış yapılmalı); "
+                "check-in ekranındaki 'Sil' butonu artık gerçekten siliyordu "
+                "(yanlış buton karşılaştırması); bugün check-in yapılmış bir "
+                "misafirin giriş tarihi artık değiştirilemiyor (yalnızca gece "
+                "sayısı); gece uzat/kısalt sonrası kişi bazlı (Özel) fiyatlar "
+                "artık doğru uygulanıyor; erken çıkışta gerçekleşmeyecek "
+                "gelecek gecelerin ödenmemiş kayıtları temizleniyor (İstatistik "
+                "artık şişirilmiş gelir göstermiyor); çıkış sonrası oda durumu "
+                "'temiz' yerine doğru şekilde 'temizlikte' oluyor; telefon "
+                "doğrulama +90 formatını artık kabul ediyor; KBS Excel 'Bildirim "
+                "Geçmişi' artık kaydedilen misafir/TC/oda/tarih bilgisini "
+                "gösteriyor; diğer Excel raporlarına (rezervasyon/oda durumu/"
+                "tarih aralığı) da formül enjeksiyonu koruması eklendi; "
+                "güncelleme aracının sürüm kontrolü artık kurulu sürüm "
+                "okunamadığında da devreye giriyor; yeni kullanıcı eklerken "
+                "şifre uzunluğu kontrol ediliyor; oda değiştirmede aynı odaya "
+                "taşıma engellendi; check-in artık tek transaction'da "
+                "tamamlanıyor.",
 }
 
 

@@ -181,14 +181,18 @@ def ana(paket=None):
 
     # Bu paket sadece "onceki_surum"den hedef_surum'e olan FARK dosyalarını
     # içerir. Kurulu sürüm bununla eşleşmiyorsa (yama sırası atlanmış, eski bir
-    # güncelleme exe'si çalıştırılmış vb.) paket eksik/yanlış dosya seti
-    # uygular ve kurulumu tutarsız bırakır — bu yüzden sıkı sıkıya engellenir.
+    # güncelleme exe'si çalıştırılmış, surum.txt okunamadığı için "mevcut" boş
+    # kaldı vb.) paket eksik/yanlış dosya seti uygular ve kurulumu tutarsız
+    # bırakır — bu yüzden sıkı sıkıya engellenir. NOT: "mevcut" boşsa (kurulu
+    # sürüm belirlenemediyse) da bu kontrol atlanmaz — tam da böyle bir
+    # durumda hangi sürümün kurulu olduğu bilinmediğinden fark paketinin
+    # güvenle uygulanabileceği garanti edilemez.
     onceki_surum = bilgi.get("onceki_surum")
-    if onceki_surum and mevcut and onceki_surum != mevcut:
+    if onceki_surum and onceki_surum != mevcut:
         mesaj(
             f"Bu güncelleme paketi {onceki_surum} sürümünden {hedef_surum}'e geçiş "
-            f"için hazırlanmış, ama kurulu sürüm {mevcut}. Farklı bir sürümden gelen "
-            "bir yama eksik/yanlış dosya bırakabilir.\n\n"
+            f"için hazırlanmış, ama kurulu sürüm {mevcut or 'okunamadı/bilinmiyor'}. "
+            "Farklı bir sürümden gelen bir yama eksik/yanlış dosya bırakabilir.\n\n"
             "Bu paketi uygulama; doğru güncelleme paketini indir ya da "
             "'Misafirhane_Kurulumu.exe' aracıyla kurulumu TAMİR ET.",
             0x10)

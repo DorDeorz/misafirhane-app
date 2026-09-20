@@ -3,6 +3,40 @@
 Bu dosya, evdeki masaüstü bilgisayardaki opencode oturumunun kaldığı yerden devam
 edebilmesi için hazırlandı. İlk iş olarak okuyun.
 
+## DEVAM (21 Eylül 2026) — laptop oturumu: hata düzeltmeleri + Erken Çıkış (1.0.4.4, release YOK)
+
+Bu bölüm **başka bir Claude Code oturumu** (Claude Sonnet 5), ev masaüstü
+DIŞINDA bir makinede (laptop) yapıldı. Ayrıntılı liste için `CLAUDE.md`
+madde 4 "1.0.4.4" bölümüne bakın — burada özet:
+
+- Oturum başında bu makinedeki eski/senkronsuz yerel kopya
+  `git reset --hard origin/main` ile GitHub'ın güncel hâline (1.0.4.3)
+  eşitlendi; test veritabanları/yedekler ve derleme klasörleri temizlendi.
+- Kullanıcı "projeyi incele, hata bul" dedi; iki paralel ajanla
+  main.py/repository.py/detay_dialog.py tarandı, bulunanlar onayla düzeltildi:
+  içerideki misafirin rezervasyonu iptal edilememesi, check-in "Sil" butonu,
+  aynı gün check-in kilidi, gece uzatmada kişi bazlı fiyat, erken çıkışta
+  gelecek ödemelerin temizlenmesi + oda durumunun doğru "temizlikte" olması,
+  telefon +90 doğrulama, KBS/export Excel formül enjeksiyonu koruması,
+  güncelleme aracı sürüm kontrolü boşluğu, şifre uzunluğu kontrolü, aynı
+  odaya taşımanın engellenmesi, check-in'in tek transaction'da olması, ve
+  daha fazlası.
+- Kullanıcı iki özellik istedi: **Erken Çıkışlar** bölümü (Çıkış sekmesi,
+  ödenmemiş borç gösterimiyle) ve **+1/-1 Gece butonlarının artık pencereyi
+  kapatmaması** (+ çakışmada net "gece eklenemiyor" uyarısı). İkisi de
+  eklendi.
+- Kullanıcı ayrıca **tam bir arayüz yeniden tasarımı** istedi; yapıldı, ama
+  beğenilmedi (önce "butonlar çok büyük", sonra "tasarımı hiç beğenmedim, eski
+  hâline döndür" dendi). **`tema.py` şu an origin/main ile birebir aynı**
+  (tasarım tamamen geri alındı). Tek kalıcı istisna: pencere açılışta
+  `showMaximized()` kullanıyor (kullanıcı bunu ayrıca, tasarımdan bağımsız
+  olarak istedi). **Sonraki oturum: kullanıcı büyük/modern bir redesign
+  istemiyor, mevcut kompakt görünümden memnun — tekrar önermeyin.**
+- `versiyon.py` → 1.0.4.4 + YENILIKLER; README güncellendi. Kod GitHub'a push
+  edildi. `guncelleme_olustur.py --tam` + Kurulum Aracı + Standalone
+  derlemeleri üretildi; `Misafirhane_Kurulumu_1.0.4.4.exe` kullanıcının
+  Masaüstü'ne kopyalandı. **GitHub Release açılmadı** (kullanıcı istemedi).
+
 ## DEVAM (20 Eylül 2026) — Claude Code kod incelemesi + hata düzeltmeleri (1.0.4.3, release YOK)
 
 Bu bölüm **Claude Code** (Claude Sonnet 5) ile bu makinede (ev masaüstü)

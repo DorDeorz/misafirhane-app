@@ -56,7 +56,8 @@ def _telefon_gecerli_mi(metin):
     if not (9 <= len(rakamlar) <= 12):
         return False
     if len(rakamlar) == 12 and rakamlar.startswith("90"):
-        rakamlar = rakamlar[2:]
+        # +90 5xx xxx xx xx -> ulusal biçimde basina 0 eklenir (05xx xxx xx xx)
+        rakamlar = "0" + rakamlar[2:]
     return rakamlar.startswith("0") and len(rakamlar) in (10, 11)
 
 
@@ -156,7 +157,7 @@ class OdaDurumuTab(QWidget):
                 r["telefon"] or "",
                 kisi_kapasite,
                 fiyat_tipi_goster(r["fiyat_tipi"]) if dolu_mu else (r["fiyat_tipi"] or ""),
-                str(r["tutar"]) + " TL" if r["tutar"] else "",
+                (f"{r['tutar']} TL" if r["tutar"] is not None else ""),
                 kalan_metin,
                 "",
                 self._oda_durum_metni(r) if not dolu_mu else "",
@@ -915,7 +916,7 @@ class YeniRezervasyonTab(QWidget):
                 referans=referans, notlar=notlar,
                 olusturan_kullanici=self.olusturan_kullanici,
             )
-        except ValueError as e:
+        except Exception as e:
             QMessageBox.warning(self, "Hata", str(e))
             return
 
@@ -1362,7 +1363,11 @@ class RezervasyonYonetimiTab(QWidget):
             QMessageBox.Yes | QMessageBox.No
         )
         if cevap == QMessageBox.Yes:
-            repository.rezervasyon_iptal(rez_id)
+            try:
+                repository.rezervasyon_iptal(rez_id)
+            except ValueError as e:
+                QMessageBox.warning(self, "İptal Edilemedi", str(e))
+                return
             self.yenile()
             if self.yenile_callback:
                 self.yenile_callback()
@@ -1378,9 +1383,12 @@ class RezervasyonYonetimiTab(QWidget):
         if not odalar:
             return
         if len(odalar) > 1:
+            # Her seçenek başına sıra numarası eklenir ki iki satırın görünen metni
+            # aynı olsa bile (teorik olarak) seçim metinden odaya güvenle geri
+            # eşlenebilsin (.index() ile arama yerine).
             secenekler = [
-                f"{o['kat_adi']} - Oda {o['oda_no']}  ({o['giris_tarihi']} · {o['gece_sayisi']} gece · {o['kisi_sayisi']} kişi)"
-                for o in odalar
+                f"{i + 1}. {o['kat_adi']} - Oda {o['oda_no']}  ({o['giris_tarihi']} · {o['gece_sayisi']} gece · {o['kisi_sayisi']} kişi)"
+                for i, o in enumerate(odalar)
             ]
             secim, ok = QInputDialog.getItem(
                 self, "Oda Değiştir", "Hangi oda satırı yeni odaya taşınacak?",
@@ -1397,7 +1405,7 @@ class RezervasyonYonetimiTab(QWidget):
             try:
                 repository.oda_degistir(ro["id"], dialog.secilen_oda_id(), dialog.secilen_tarih())
                 QMessageBox.information(self, "Başarılı", "Oda değişikliği tamamlandı.")
-            except ValueError as e:
+            except Exception as e:
                 QMessageBox.warning(self, "Hata", str(e))
                 return
             self.yenile()
@@ -1576,7 +1584,7 @@ class OdaYonetimiTab(QWidget):
         ariza_gun = self.ariza_gun.value() if durum == "arizali" else 0
         try:
             repository.oda_durum_ayarla(self.secili_oda_id, durum, ariza_gun)
-        except ValueError as e:
+        except Exception as e:
             QMessageBox.warning(self, "Durum Değiştirilemedi", str(e))
             return
         self.yenile()
@@ -1622,7 +1630,7 @@ class OdaYonetimiTab(QWidget):
                 self.oda_no.value(), self.oda_tipi.currentText(),
                 eski_no=self._eski_no_deger(), kapasite=self.kapasite.value()
             )
-        except ValueError as e:
+        except Exception as e:
             QMessageBox.warning(self, "Hata", str(e))
             return
         QMessageBox.information(self, "Başarılı", "Oda eklendi.")
@@ -1641,7 +1649,7 @@ class OdaYonetimiTab(QWidget):
                 self.oda_no.value(), self.oda_tipi.currentText(), self._eski_no_deger(),
                 kapasite=self.kapasite.value()
             )
-        except ValueError as e:
+        except Exception as e:
             QMessageBox.warning(self, "Hata", str(e))
             return
         QMessageBox.information(self, "Başarılı", "Oda güncellendi.")
@@ -1661,7 +1669,7 @@ class OdaYonetimiTab(QWidget):
         if cevap == QMessageBox.Yes:
             try:
                 repository.oda_sil(self.secili_oda_id)
-            except ValueError as e:
+            except Exception as e:
                 QMessageBox.warning(self, "Hata", str(e))
                 return
             self._formu_temizle()
@@ -1849,18 +1857,44 @@ class CikisTab(QWidget):
         layout.addWidget(aciklama)
 
         self.tablo = QTableWidget()
-        self.tablo.setColumnCount(6)
+        self.tablo.setColumnCount(7)
         self.tablo.setHorizontalHeaderLabels(
-            ["Oda", "Ad Soyad", "Telefon", "Giriş", "Gece", "İşlem"])
+            ["Oda", "Ad Soyad", "Telefon", "Giriş", "Gece", "Borç", "İşlem"])
         self.tablo.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.tablo.setEditTriggers(QTableWidget.NoEditTriggers)
         tabloyu_kompakt_yap(self.tablo, 34)
-        self.tablo.setColumnWidth(5, 150)
+        self.tablo.setColumnWidth(6, 150)
         layout.addWidget(self.tablo, stretch=1)
 
         self.ozet_label = QLabel("")
         self.ozet_label.setStyleSheet("")
         layout.addWidget(self.ozet_label)
+
+        erken_baslik = QLabel("Erken Çıkışlar")
+        erken_baslik.setStyleSheet("font-weight: bold; margin-top: 6px;")
+        layout.addWidget(erken_baslik)
+
+        erken_aciklama = QLabel(
+            "Şu an konaklayan ama planlı çıkış günü bugün OLMAYAN misafirler (yukarıdaki "
+            "listede zaten yer alanlar burada tekrar gösterilmez). Planlanandan önce çıkmak "
+            "isteyen bir misafiri buradan çıkış yapabilirsin."
+        )
+        erken_aciklama.setWordWrap(True)
+        erken_aciklama.setStyleSheet("font-style: italic; font-size: 10px;")
+        layout.addWidget(erken_aciklama)
+
+        self.erken_tablo = QTableWidget()
+        self.erken_tablo.setColumnCount(7)
+        self.erken_tablo.setHorizontalHeaderLabels(
+            ["Oda", "Ad Soyad", "Telefon", "Giriş", "Planlanan Çıkış", "Borç", "İşlem"])
+        self.erken_tablo.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.erken_tablo.setEditTriggers(QTableWidget.NoEditTriggers)
+        tabloyu_kompakt_yap(self.erken_tablo, 34)
+        self.erken_tablo.setColumnWidth(6, 150)
+        layout.addWidget(self.erken_tablo, stretch=1)
+
+        self.erken_ozet_label = QLabel("")
+        layout.addWidget(self.erken_ozet_label)
 
         self.yenile()
 
@@ -1871,39 +1905,94 @@ class CikisTab(QWidget):
         for r in rows:
             row_idx = self.tablo.rowCount()
             self.tablo.insertRow(row_idx)
+            borc = repository.odasi_odenmemis_tutar(r["id"], kesim_tarihi=tarih_str)
             degerler = [
                 f"{r['kat_adi']} - {r['oda_no']}", r["ad_soyad"],
-                r["telefon"] or "", r["giris_tarihi"], str(r["gece_sayisi"]), ""
+                r["telefon"] or "", r["giris_tarihi"], str(r["gece_sayisi"]),
+                f"{borc:,}₺" if borc else "-", "",
             ]
             for col, val in enumerate(degerler):
-                self.tablo.setItem(row_idx, col, QTableWidgetItem(val))
+                item = QTableWidgetItem(val)
+                if col == 5 and borc:
+                    tema.renklendir(item, "#f7c5c5")
+                self.tablo.setItem(row_idx, col, item)
             cikis_btn = QPushButton("🚪 Çıkış Yap")
             cikis_btn.setObjectName("birincil")
-            cikis_btn.clicked.connect(lambda checked, rid=r["id"]: self.cikis_yap(rid))
+            cikis_btn.clicked.connect(lambda checked, rid=r["id"]: self.cikis_yap(rid, tarih_str))
             islem_widget = QWidget()
             il = QHBoxLayout(islem_widget)
             il.setContentsMargins(2, 2, 2, 2)
             il.addWidget(cikis_btn)
-            self.tablo.setCellWidget(row_idx, 5, islem_widget)
+            self.tablo.setCellWidget(row_idx, 6, islem_widget)
         self.ozet_label.setText(f"Çıkış yapacak misafir: {len(rows)}")
 
-    def cikis_yap(self, ro_id):
+        erken_rows = repository.erken_cikis_adaylari(tarih_str)
+        bugun = date.today().isoformat()
+        self.erken_tablo.setRowCount(0)
+        for r in erken_rows:
+            row_idx = self.erken_tablo.rowCount()
+            self.erken_tablo.insertRow(row_idx)
+            borc = repository.odasi_odenmemis_tutar(r["id"], kesim_tarihi=bugun)
+            gecikmis = r["planli_cikis"] < bugun
+            degerler = [
+                f"{r['kat_adi']} - {r['oda_no']}", r["ad_soyad"],
+                r["telefon"] or "", r["giris_tarihi"],
+                r["planli_cikis"] + (" ⚠ gecikmiş" if gecikmis else ""),
+                f"{borc:,}₺" if borc else "-", "",
+            ]
+            for col, val in enumerate(degerler):
+                item = QTableWidgetItem(val)
+                if col == 4 and gecikmis:
+                    tema.renklendir(item, "#fde3cf")
+                if col == 5 and borc:
+                    tema.renklendir(item, "#f7c5c5")
+                self.erken_tablo.setItem(row_idx, col, item)
+            erken_btn = QPushButton("🚪 Erken Çıkış Yap")
+            erken_btn.clicked.connect(lambda checked, rid=r["id"]: self.erken_cikis_yap(rid))
+            islem_widget = QWidget()
+            il = QHBoxLayout(islem_widget)
+            il.setContentsMargins(2, 2, 2, 2)
+            il.addWidget(erken_btn)
+            self.erken_tablo.setCellWidget(row_idx, 6, islem_widget)
+        self.erken_ozet_label.setText(f"Erken çıkış adayı: {len(erken_rows)}")
+
+    def _cikisi_uygula(self, ro_id, baslik, mesaj_on_ek, borc_kesim_tarihi):
+        borc = repository.odasi_odenmemis_tutar(ro_id, kesim_tarihi=borc_kesim_tarihi)
+        borc_metni = (f"\n\n⚠ Ödenmemiş borç: {borc:,}₺" if borc else "\n\nÖdenmemiş borcu yok.")
         cevap = QMessageBox.question(
-            self, "Çıkış İşlemi",
-            "Misafir çıkış yaptı mı? İşlem sonrası oda 'temizlikte' durumuna alınır.",
+            self, baslik,
+            mesaj_on_ek + " İşlem sonrası oda 'temizlikte' durumuna alınır." + borc_metni,
             QMessageBox.Yes | QMessageBox.No
         )
         if cevap != QMessageBox.Yes:
             return
         try:
-            repository.odasi_cikis_yap(ro_id)
+            dusen_odenmis = repository.odasi_cikis_yap(ro_id)
         except ValueError as e:
             QMessageBox.warning(self, "Çıkış Yapılamadı", str(e))
             return
+        if dusen_odenmis:
+            QMessageBox.information(
+                self, "Önceden Ödenmiş Geceler",
+                "Şu geceler için daha önce ödeme alınmıştı ama misafir planlanandan "
+                "erken çıktı (ödendi bilgisi korundu, tutar iade edilmedi):\n"
+                + ", ".join(dusen_odenmis),
+            )
         QMessageBox.information(self, "Tamamlandı", "Çıkış işlemi tamamlandı. Oda temizlikte durumuna alındı.")
         self.yenile()
         if self.yenile_callback:
             self.yenile_callback()
+
+    def cikis_yap(self, ro_id, tarih_str):
+        self._cikisi_uygula(ro_id, "Çıkış İşlemi", "Misafir çıkış yaptı mı?", tarih_str)
+
+    def erken_cikis_yap(self, ro_id):
+        bugun = date.today().isoformat()
+        self._cikisi_uygula(
+            ro_id, "Erken Çıkış İşlemi",
+            "Bu misafir planlanan çıkış gününden ÖNCE çıkış yapacak. Onaylıyor musun?",
+            bugun,
+        )
 
 
 # ============================================================
@@ -2410,13 +2499,16 @@ class KullaniciYonetimiTab(QWidget):
         if not self.yeni_kullanici_adi.text().strip() or not self.yeni_sifre.text():
             QMessageBox.warning(self, "Eksik Bilgi", "Kullanıcı adı ve şifre gerekli.")
             return
+        if len(self.yeni_sifre.text()) < 4:
+            QMessageBox.warning(self, "Zayıf Şifre", "Şifre en az 4 karakter olmalı.")
+            return
         try:
             auth.kullanici_ekle(
                 self.yeni_kullanici_adi.text().strip(),
                 self.yeni_sifre.text(),
                 self.yeni_ad_soyad.text().strip()
             )
-        except ValueError as e:
+        except Exception as e:
             QMessageBox.warning(self, "Hata", str(e))
             return
         QMessageBox.information(self, "Başarılı", "Kullanıcı eklendi.")
@@ -2476,7 +2568,7 @@ def main():
             pencere = AnaPencere(aktif_kullanici=giris.giris_yapan,
                                   cikis_callback=giris_ekranini_goster)
             pencere_kutusu["pencere"] = pencere
-            pencere.show()
+            pencere.showMaximized()
         else:
             app.quit()
 
