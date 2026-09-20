@@ -103,34 +103,45 @@ class KbsPencere(QDialog):
         tablo.setUpdatesEnabled(True)
 
     def yenile(self):
-        giris, cikis = kbs.kbs_bekleyenler(self.db_yolu, self.takip_yolu)
+        try:
+            giris, cikis = kbs.kbs_bekleyenler(self.db_yolu, self.takip_yolu)
+            ozet = kbs.kbs_durum_ozet(self.db_yolu, self.takip_yolu)
+        except Exception as e:
+            QMessageBox.critical(self, "KBS", "Veri okunamadı:\n%s" % e)
+            return
         self.giris_satirlari = giris
         self.cikis_satirlari = cikis
         self._doldur(self.giris_tablo, giris)
         self._doldur(self.cikis_tablo, cikis)
-        ozet = kbs.kbs_durum_ozet(self.db_yolu, self.takip_yolu)
         self.durum.setText(
             "Giriş bekleyen: %d  •  Çıkış bekleyen: %d  •  Toplam gönderilen: %d"
             % (len(giris), len(cikis), ozet["gonderilen"]))
 
-    def _secilen_kesitler(self):
+    def _secilen_kayitlar(self):
+        """Seçili satırların TAM kayıtlarını (tur/misafir_ad/tc_no/oda/tarih dahil)
+        döndürür ki kbs_markala bunları denetim izine (BİLDİRİM GEÇMİŞİ) yazabilsin."""
         tablo = self.sekmeler.currentWidget()
-        satirlar = []
-        for h in tablo.selectedIndexes():
-            satirlar.append(h.row())
-        kesitler = []
-        for satir in sorted(set(satirlar)):
+        kaynak = self.giris_satirlari if tablo is self.giris_tablo else self.cikis_satirlari
+        haritalar = {s["kesit"]: s for s in kaynak}
+        satirlar = sorted({h.row() for h in tablo.selectedIndexes()})
+        kayitlar = []
+        for satir in satirlar:
             h = tablo.item(satir, 0)
-            if h is not None and h.data(Qt.UserRole):
-                kesitler.append(h.data(Qt.UserRole))
-        return kesitler
+            kesit = h.data(Qt.UserRole) if h is not None else None
+            if kesit and kesit in haritalar:
+                kayitlar.append(haritalar[kesit])
+        return kayitlar
 
     def gonderildi_isaretle(self):
-        kesitler = self._secilen_kesitler()
-        if not kesitler:
+        kayitlar = self._secilen_kayitlar()
+        if not kayitlar:
             QMessageBox.information(self, "KBS", "Önce listeden bir satır seç.")
             return
-        kbs.kbs_markala(kesitler, "gonderildi", self.takip_yolu)
+        try:
+            kbs.kbs_markala(kayitlar, "gonderildi", self.takip_yolu)
+        except Exception as e:
+            QMessageBox.critical(self, "KBS", "İşaretlenemedi:\n%s" % e)
+            return
         self.yenile()
 
     def excel_cikar(self):

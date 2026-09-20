@@ -200,7 +200,11 @@ def kaynak_yolu(goreli):
 
 
 def calistir_bekle(exe):
-    """Gomulu exe'yi runas (UAC) ile calistirir ve cikis kodunu dondurur."""
+    """Gomulu exe'yi runas (UAC) ile calistirir ve cikis kodunu dondurur.
+    WinAPI cagrilarindan biri basarisiz olursa (gecersiz handle vb.) -1
+    (basarisiz) dondurulur; 0 asla varsayilan/tahmini bir deger olarak
+    dondurulmez cunku cagiranlar kod==0'i "basarili" sayip ona gore islem
+    yapiyor (ornegin kaldirmada veri klasorunu silme kararini buna baglar)."""
     info = ShellExecuteInfo()
     info.cbSize = ctypes.sizeof(ShellExecuteInfo)
     info.fMask = SEE_MASK_NOCLOSEPROCESS
@@ -212,9 +216,14 @@ def calistir_bekle(exe):
         return -1
     proc = info.hProcess
     try:
-        ctypes.windll.kernel32.WaitForSingleObject(proc, 0xFFFFFFFF)
+        WAIT_OBJECT_0 = 0
+        bekleme_sonucu = ctypes.windll.kernel32.WaitForSingleObject(proc, 0xFFFFFFFF)
+        if bekleme_sonucu != WAIT_OBJECT_0:
+            return -1
         kod = wintypes.DWORD(0)
-        ctypes.windll.kernel32.GetExitCodeProcess(proc, ctypes.byref(kod))
+        okundu_mu = ctypes.windll.kernel32.GetExitCodeProcess(proc, ctypes.byref(kod))
+        if not okundu_mu:
+            return -1
         return kod.value
     finally:
         ctypes.windll.kernel32.CloseHandle(proc)

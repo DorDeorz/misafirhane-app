@@ -18,7 +18,7 @@ from datetime import date
 import repository
 import tema
 from database import fiyat_tipi_goster
-from kbs import tanitim_kodu_gecerli_mi, YABANCI_ALANLAR
+from kbs import misafir_tipi, tc_dogrula, YABANCI_ALANLAR
 
 FIYAT_TIPLERI = ["Sabit", "Uye", "Ozel"]
 
@@ -501,7 +501,7 @@ class RezervasyonDetayDialog(QDialog):
                 mt.setItem(satir, 0, bos)
                 continue
             for j, m in enumerate(misafirler):
-                yabanci_mi = tanitim_kodu_gecerli_mi(m["tc_no"]) == "yabanci"
+                yabanci_mi = misafir_tipi(m["tc_no"], m) == "yabanci"
                 satir = mt.rowCount()
                 mt.insertRow(satir)
                 eksikler = [etiket for alan, etiket in YABANCI_ALANLAR
@@ -722,7 +722,7 @@ class CheckinDialog(QDialog):
 
         self.kapasite = self.ro["kapasite"] or 1
         self.ekstra_yatak = False
-        self.kayit_limiti = max(self.kapasite + 2, 3)
+        self.kayit_limiti = repository.oda_liman(self.kapasite)
         baslik = "Check-in Yap" if not self.ro["checkin_yapildi"] else "Misafirleri Düzenle"
         self.setWindowTitle(f"{baslik} - {self.ro['kat_adi']} Oda {self.ro['oda_no']}")
         self.setMinimumSize(720, 480)
@@ -786,7 +786,7 @@ class CheckinDialog(QDialog):
 
         if mevcut:
             for m in mevcut:
-                yabanci_mi = tanitim_kodu_gecerli_mi(m["tc_no"]) == "yabanci"
+                yabanci_mi = misafir_tipi(m["tc_no"], m) == "yabanci"
                 self._kisi_ekle(
                     ad_soyad=m["ad_soyad"] or "",
                     tc_no=m["tc_no"] or "",
@@ -1008,10 +1008,11 @@ class CheckinDialog(QDialog):
                     "belge_turu": yabanci_data.get("belge_turu") or "",
                 })
             else:
-                if not (belge_no.isdigit() and len(belge_no) == 11):
+                if not tc_dogrula(belge_no):
                     QMessageBox.warning(
                         self, "Geçersiz TC No",
-                        f"{i}. kişinin TC No'su 11 haneli rakamlardan oluşmalı.")
+                        f"{i}. kişinin TC No'su geçerli değil (11 haneli olmalı ve "
+                        "T.C. Kimlik No sağlama algoritmasına uymalı).")
                     return
                 misafir_listesi.append((ad, belge_no, tip, ucret))
 

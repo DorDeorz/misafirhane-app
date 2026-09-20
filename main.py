@@ -12,8 +12,8 @@ from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QTabWidget, QLabel, QPushButton, QTableWidget, QTableWidgetItem,
     QDateEdit, QComboBox, QLineEdit, QSpinBox, QFormLayout, QMessageBox,
-    QHeaderView, QGroupBox, QCheckBox, QTextEdit, QDialog, QDialogButtonBox,
-    QFileDialog, QScrollArea, QSplitter, QGridLayout, QFrame, QAbstractItemView
+    QHeaderView, QGroupBox, QDialog, QDialogButtonBox, QInputDialog,
+    QFileDialog, QSplitter, QGridLayout, QFrame, QAbstractItemView
 )
 from PySide6.QtCore import Qt, QDate, QTimer
 from PySide6.QtGui import QColor, QIcon
@@ -1945,6 +1945,11 @@ class IstatistikTab(QWidget):
         )
         layout.addWidget(self.tablo, stretch=1)
 
+        self.hata_etiketi = QLabel("")
+        self.hata_etiketi.setStyleSheet("color: #c0392b; font-weight: 600;")
+        self.hata_etiketi.setVisible(False)
+        layout.addWidget(self.hata_etiketi)
+
         self.hesapla()
 
     def hesapla(self):
@@ -1954,6 +1959,11 @@ class IstatistikTab(QWidget):
             s = repository.aylik_istatistik(ay, yil)
         except Exception as e:
             s = {}
+            self.hata_etiketi.setText(f"⚠ İstatistik hesaplanamadı, aşağıdaki değerler güvenilir değil: {e}")
+            self.hata_etiketi.setVisible(True)
+            loglama.islem_yaz("hata", f"İstatistik hesaplama hatası ({ay}/{yil}): {e}")
+        else:
+            self.hata_etiketi.setVisible(False)
         satirlar = [
             ("Rezervasyon adedi (o ayda girişli)", s.get("rez_adedi", 0)),
             ("Satılan gece (o aya düşen)", s.get("satilan_gece", 0)),

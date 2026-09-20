@@ -110,27 +110,44 @@ def uygulamayi_kapat():
 
 
 def eskiyi_yedekle(kurulum, eski_surum):
-    """Eski Misafirhane.exe'yi _eski klasorune tasir (son 3 kopya tutulur)."""
+    """Eski Misafirhane.exe'yi _eski klasorune tasir (son 3 kopya tutulur).
+    Basarili olup olmadigini dondurur; cagiran taraf bunu kullanici uyarisi
+    icin kullanir (yedekleme basarisiz olsa bile guncellemeyi ENGELLEMEZ,
+    ama kullanici geri donus imkani olmadigini bilmelidir)."""
     eski_klasor = os.path.join(kurulum, "_eski")
     yaz(eski_klasor)
     kaynak = os.path.join(kurulum, PROSES_ADI)
-    if os.path.exists(kaynak):
-        ad = f"misafirhane_{eski_surum or 'onceki'}.exe"
-        hedef = os.path.join(eski_klasor, ad)
-        try:
-            if os.path.exists(hedef):
-                os.remove(hedef)
-            shutil.copy2(kaynak, hedef)
-            tetikler = sorted(
-                (os.path.join(eski_klasor, f) for f in os.listdir(eski_klasor)),
-                key=os.path.getmtime, reverse=True)
-            for cok in tetikler[3:]:
-                try:
-                    os.remove(cok)
-                except OSError:
-                    pass
-        except OSError:
-            pass
+    if not os.path.exists(kaynak):
+        return True
+    ad = f"misafirhane_{eski_surum or 'onceki'}.exe"
+    hedef = os.path.join(eski_klasor, ad)
+    try:
+        if os.path.exists(hedef):
+            os.remove(hedef)
+        shutil.copy2(kaynak, hedef)
+        tetikler = sorted(
+            (os.path.join(eski_klasor, f) for f in os.listdir(eski_klasor)),
+            key=os.path.getmtime, reverse=True)
+        for cok in tetikler[3:]:
+            try:
+                os.remove(cok)
+            except OSError:
+                pass
+        return True
+    except OSError:
+        return False
+
+
+def _hata_gunlugune_yaz(kurulum, hata):
+    """Guncelleme sirasinda beklenmeyen bir hata olursa --windowed exe sessizce
+    kapanmasin diye TEMP'e de bir satir yazar (kullanici mesaj kutusunu kapatsa
+    bile iz kalir)."""
+    try:
+        yol = os.path.join(os.environ.get("TEMP", kurulum), "misa_guncelleme_hata.log")
+        with open(yol, "a", encoding="utf-8") as f:
+            f.write(f"[{UYGULAMA_ADI}] Guncelleme hatasi ({kurulum}): {hata}\n")
+    except OSError:
+        pass
 
 
 def ana(paket=None):
@@ -162,6 +179,21 @@ def ana(paket=None):
         mesaj(f"Kurulu sürüm zaten güncel: {hedef_surum}.", 0x40)
         return 0
 
+    # Bu paket sadece "onceki_surum"den hedef_surum'e olan FARK dosyalarını
+    # içerir. Kurulu sürüm bununla eşleşmiyorsa (yama sırası atlanmış, eski bir
+    # güncelleme exe'si çalıştırılmış vb.) paket eksik/yanlış dosya seti
+    # uygular ve kurulumu tutarsız bırakır — bu yüzden sıkı sıkıya engellenir.
+    onceki_surum = bilgi.get("onceki_surum")
+    if onceki_surum and mevcut and onceki_surum != mevcut:
+        mesaj(
+            f"Bu güncelleme paketi {onceki_surum} sürümünden {hedef_surum}'e geçiş "
+            f"için hazırlanmış, ama kurulu sürüm {mevcut}. Farklı bir sürümden gelen "
+            "bir yama eksik/yanlış dosya bırakabilir.\n\n"
+            "Bu paketi uygulama; doğru güncelleme paketini indir ya da "
+            "'Misafirhane_Kurulumu.exe' aracıyla kurulumu TAMİR ET.",
+            0x10)
+        return 5
+
     notlar = bilgi.get("notlar", "")
     onay = mesaj(
         f"{UYGULAMA_ADI}\n\n"
@@ -174,12 +206,23 @@ def ana(paket=None):
         return 130
 
     uygulamayi_kapat()
+    yedek_alindi = eskiyi_yedekle(kurulum, mevcut or hedef_surum)
     try:
-        eskiyi_yedekle(kurulum, mevcut or hedef_surum)
         sayi = uygula(kurulum, paket)
-    except RuntimeError as e:
-        mesaj(f"Güncelleme BAŞARISIZ:\n{e}", 0x10)
+    except Exception as e:
+        _hata_gunlugune_yaz(kurulum, e)
+        mesaj(
+            f"Güncelleme BAŞARISIZ:\n{e}\n\n"
+            "Kurulum yarım kalmış olabilir. 'Misafirhane_Kurulumu.exe' aracını "
+            "çalıştırıp 'Tamir Et' ile kurulumu onarabilirsin.",
+            0x10)
         return 4
+    if not yedek_alindi:
+        mesaj(
+            "Not: güncelleme başarıyla tamamlandı, ama önceki sürümün yedeği "
+            "alınamadı (disk dolu/izin sorunu olabilir). Sorun çıkarsa "
+            "'Tamir Et' ile yeniden kurabilirsin.",
+            0x40)
 
     sonuc = mesaj(
         f"Güncelleme tamamlandı.\n\n"

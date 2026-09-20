@@ -111,14 +111,22 @@ def init_db():
                 fiyat_tipi TEXT DEFAULT 'Sabit',
                 gecelik_ucret INTEGER DEFAULT 1300,
                 checkin_yapildi INTEGER DEFAULT 0,
+                onceki_ro_id INTEGER,
                 FOREIGN KEY (rezervasyon_id) REFERENCES rezervasyonlar(id),
-                FOREIGN KEY (oda_id) REFERENCES odalar(id)
+                FOREIGN KEY (oda_id) REFERENCES odalar(id),
+                FOREIGN KEY (onceki_ro_id) REFERENCES rezervasyon_odalar(id)
             )
         """)
         cur.execute(
             "CREATE UNIQUE INDEX IF NOT EXISTS uk_rez_oda "
             "ON rezervasyon_odalar (rezervasyon_id, oda_id)"
         )
+        # Eski veritabanlarında (1.0.4.2 ve öncesi) bu kolon yoktu: oda değiştirme
+        # sırasında bölünen satırları birbirine bağlamak için eklendi (KBS'de aynı
+        # misafir için mükerrer "giriş" bildirimi / hatalı "çıkış" üretilmesini önler).
+        _ro_kolonlari = [r[1] for r in cur.execute("PRAGMA table_info(rezervasyon_odalar)").fetchall()]
+        if "onceki_ro_id" not in _ro_kolonlari:
+            cur.execute("ALTER TABLE rezervasyon_odalar ADD COLUMN onceki_ro_id INTEGER")
 
         # Oda bazli check-in ile doldurulan kisi listesi (her misafirin fiyati).
         cur.execute("""

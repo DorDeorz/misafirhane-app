@@ -45,13 +45,44 @@ def tc_dogrula(tc):
 
 
 def tanitim_kodu_gecerli_mi(tc):
-    """11 haneli sayı ise T.C. no; değil ise yabancı/muhtemel belge no."""
+    """11 haneli sayı ise T.C. no; değil ise yabancı/muhtemel belge no.
+    NOT: yalnızca numaranın BİÇİMİNE bakar. Türkiye'de yabancılara verilen
+    Yabancı Kimlik Numarası (YKN) da 11 haneli rakamdır; bu yüzden bir misafirin
+    gerçekten yabancı olup olmadığını kesin olarak ayırt etmek için misafir_tipi()
+    tercih edilmelidir (check-in'de zaten toplanan uyruk/doğum yeri gibi KBS
+    alanlarının varlığına bakar)."""
     value = (tc or "").strip()
     if value.isdigit() and len(value) == 11:
         return "yerli"
     if value:
         return "yabanci"
     return "eksik"
+
+
+def _alan_degeri(satir, alan):
+    """satir bir sqlite3.Row ya da dict olabilir; alan yoksa/boşsa '' döner."""
+    try:
+        deger = satir[alan]
+    except (KeyError, IndexError, TypeError):
+        return ""
+    return (deger or "").strip() if isinstance(deger, str) else (deger or "")
+
+
+def misafir_tipi(tc_no, satir=None):
+    """Misafirin yerli/yabancı/eksik durumunu belirler.
+
+    Öncelik, check-in'de toplanan KBS'ye özgü yabancı alanlarından (uyruk,
+    doğum tarihi, cinsiyet, doğum yeri, belge türü) biri doluysa "yabanci"
+    döner: bu, 11 haneli Yabancı Kimlik Numarası (YKN) taşıyan, bilgileri tam
+    girilmiş bir yabancı misafirin yalnızca numara biçimine bakılarak yanlışlıkla
+    "yerli" sayılmasını önler (bkz. tanitim_kodu_gecerli_mi notu).
+    `satir` verilmezse (ör. henüz kaydedilmemiş, elle girilen bir numara) yalnızca
+    numara biçiminden tahmin eder."""
+    if satir is not None:
+        for alan, _ in YABANCI_ALANLAR:
+            if _alan_degeri(satir, alan):
+                return "yabanci"
+    return tanitim_kodu_gecerli_mi(tc_no)
 
 
 def varsayilan_veri_yolu():
@@ -120,12 +151,26 @@ def kbs_veri_topla(db_yolu=None):
             for a, _ in YABANCI_ALANLAR
         )
         sanal_kolonlar = ", ".join("NULL AS %s" % a for a, _ in YABANCI_ALANLAR)
+
+        # Eski veritabanlarında (1.0.4.2 ve öncesi) onceki_ro_id kolonu yoktu; PRAGMA
+        # ile yoklanır, yoksa oda değiştirme zinciri yokmuş gibi davranılır (NULL/0).
+        _ro_kolonlari = [
+            r[1] for r in conn.execute("PRAGMA table_info(rezervasyon_odalar)").fetchall()
+        ]
+        if "onceki_ro_id" in _ro_kolonlari:
+            onceki_ifade = "ro.onceki_ro_id"
+            devam_ifade = "EXISTS (SELECT 1 FROM rezervasyon_odalar r2 WHERE r2.onceki_ro_id = ro.id)"
+        else:
+            onceki_ifade = "NULL"
+            devam_ifade = "0"
+
         sorgu = """
             SELECT
                 m.id AS misafir_id, m.rezervasyon_oda_id AS ro_id,
                 m.ad_soyad AS misafir_ad, m.tc_no, m.sira_no,
                 m.fiyat_tipi,
                 ro.giris_tarihi, ro.gece_sayisi, ro.cikis_tarihi, ro.checkin_yapildi,
+                %s AS onceki_ro_id, %s AS devam_var_mi,
                 o.kat_adi, o.oda_no, o.oda_tipi,
                 r.id AS rez_id, r.telefon, r.ad_soyad AS rez_ad, r.referans,
                 %s
@@ -140,6 +185,7 @@ def kbs_veri_topla(db_yolu=None):
                 r.ad_soyad AS misafir_ad, r.tc_no, 1 AS sira_no,
                 ro.fiyat_tipi,
                 ro.giris_tarihi, ro.gece_sayisi, ro.cikis_tarihi, ro.checkin_yapildi,
+                %s AS onceki_ro_id, %s AS devam_var_mi,
                 o.kat_adi, o.oda_no, o.oda_tipi,
                 r.id AS rez_id, r.telefon, r.ad_soyad AS rez_ad, r.referans,
                 %s
@@ -151,14 +197,16 @@ def kbs_veri_topla(db_yolu=None):
                   SELECT 1 FROM misafirler m WHERE m.rezervasyon_oda_id = ro.id
               )
             ORDER BY giris_tarihi, kat_adi, oda_no, sira_no
-        """ % (gercek_kolonlar, sanal_kolonlar)
+        """ % (onceki_ifade, devam_ifade, gercek_kolonlar,
+               onceki_ifade, devam_ifade, sanal_kolonlar)
         rows = conn.execute(sorgu).fetchall()
     finally:
         conn.close()
 
     sonuc = []
     for r in rows:
-        tip = tanitim_kodu_gecerli_mi(r["tc_no"])
+        yabanci_bilgi = {alan: (r[alan] or "").strip() for alan, _ in YABANCI_ALANLAR}
+        tip = misafir_tipi(r["tc_no"], yabanci_bilgi)
         satir = {
             "misafir_id": r["misafir_id"],
             "ro_id": r["ro_id"],
@@ -170,12 +218,14 @@ def kbs_veri_topla(db_yolu=None):
             "giris_tarihi": r["giris_tarihi"],
             "cikis_tarihi": r["cikis_tarihi"],
             "checkin_yapildi": r["checkin_yapildi"],
+            # Oda değiştirmede bölünen satırları birbirine bağlar (bkz. kbs_bekleyenler):
+            "onceki_ro_id": r["onceki_ro_id"],
+            "devam_var_mi": bool(r["devam_var_mi"]),
             "rez_id": r["rez_id"],
             "tip": tip,  # yerli / yabanci / eksik
             "referans": (r["referans"] or ""),
         }
-        for alan, _ in YABANCI_ALANLAR:
-            satir[alan] = (r[alan] or "").strip()
+        satir.update(yabanci_bilgi)
         sonuc.append(satir)
     return sonuc
 
@@ -200,16 +250,19 @@ def kbs_bekleyenler(db_yolu=None, takip_yolu=None):
 
     giris, cikis = [], []
     for v in veriler:
-        oda_etiket = v["oda"]
-        if v["checkin_yapildi"]:
+        # onceki_ro_id doluysa bu satır bir oda değiştirmeyle oluşan DEVAM satırıdır:
+        # misafir zaten (eski satırdan) bildirilmiş sayılır, yeni bir "giriş" değildir.
+        if v["checkin_yapildi"] and not v["onceki_ro_id"]:
             g = dict(v, tur="GİRİŞ", tarih=v["giris_tarihi"],
-                     kesit="%s:giris" % v["ro_id"])
+                     kesit="%s:%s:giris" % (v["ro_id"], v["misafir_id"]))
             g["not"] = _satir_notu(v)
             if g["kesit"] not in izlenenler:
                 giris.append(g)
-        if v["cikis_tarihi"]:
+        # devam_var_mi True ise bu satırın cikis_tarihi'si gerçek bir otelden ayrılış
+        # değil, oda değiştirme sırasında satırın kapatılmasından kaynaklanır.
+        if v["cikis_tarihi"] and not v["devam_var_mi"]:
             c = dict(v, tur="ÇIKIŞ", tarih=v["cikis_tarihi"],
-                     kesit="%s:cikis" % v["ro_id"])
+                     kesit="%s:%s:cikis" % (v["ro_id"], v["misafir_id"]))
             c["not"] = _satir_notu(v)
             if c["kesit"] not in izlenenler:
                 cikis.append(c)
@@ -253,19 +306,37 @@ def kbs_durum_ozet(db_yolu=None, takip_yolu=None):
 # Gönderildi / atlandı işaretleme
 # --------------------------------------------------------------------------
 
-def kbs_markala(kesitler, durum="gonderildi", takip_yolu=None):
-    """Verilen kesitleri 'gonderildi' ya da 'atlandi' olarak işaretler."""
+def kbs_markala(kayitlar, durum="gonderildi", takip_yolu=None):
+    """Verilen kayıtları 'gonderildi' ya da 'atlandi' olarak işaretler.
+
+    kayitlar: kesit (str) listesi OLABİLİR (geriye uyumlu, sadece kesit yazılır)
+    VEYA kbs_bekleyenler()'in döndürdüğü satır sözlüklerinin listesi olabilir —
+    bu durumda tur/misafir_ad/tc_no/oda/tarih de denetim izine (BİLDİRİM GEÇMİŞİ)
+    kaydedilir."""
     if takip_yolu is None:
         takip_yolu = TAKIP_DOSYASI
     takip = _takip_baglan(takip_yolu)
     try:
-        for kesit in kesitler:
+        zaman = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        for kayit in kayitlar:
+            if isinstance(kayit, dict):
+                kesit = kayit["kesit"]
+                tur = kayit.get("tur")
+                misafir_ad = kayit.get("misafir_ad")
+                tc_no = kayit.get("tc_no")
+                oda = kayit.get("oda")
+                tarih = kayit.get("tarih")
+            else:
+                kesit = kayit
+                tur = misafir_ad = tc_no = oda = tarih = None
             takip.execute(
                 "INSERT OR IGNORE INTO bildirimler (kesit, durum) VALUES (?, ?)",
                 (kesit, durum))
             takip.execute(
-                "UPDATE bildirimler SET durum=?, zaman=? WHERE kesit=?",
-                (durum, datetime.now().strftime("%Y-%m-%d %H:%M:%S"), kesit))
+                "UPDATE bildirimler SET durum=?, tur=COALESCE(?, tur), "
+                "misafir_ad=COALESCE(?, misafir_ad), tc_no=COALESCE(?, tc_no), "
+                "oda=COALESCE(?, oda), tarih=COALESCE(?, tarih), zaman=? WHERE kesit=?",
+                (durum, tur, misafir_ad, tc_no, oda, tarih, zaman, kesit))
         takip.commit()
     finally:
         takip.close()
@@ -289,6 +360,21 @@ def _genislik(ws, genislikler):
         ws.column_dimensions[harf].width = g
 
 
+_TEHLIKELI_ON_EK = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _guvenli_hucre(deger):
+    """Excel/CSV formül enjeksiyonuna karşı: '=', '+', '-', '@' ile başlayan
+    (misafir adı, TC/belge no, referans gibi elle girilen) hücre değerlerinin
+    başına tek tırnak ekler ki Excel bunu formül olarak yorumlamasın."""
+    if deger is None:
+        return deger
+    s = str(deger)
+    if s.startswith(_TEHLIKELI_ON_EK):
+        return "'" + s
+    return s
+
+
 def kbs_excel_ure(cikti_yolu, db_yolu=None, takip_yolu=None):
     """Bildirim listesini Excel dosyasına yazar. Kaç satır yazıldığını döner."""
     giris, cikis = kbs_bekleyenler(db_yolu, takip_yolu)
@@ -301,9 +387,11 @@ def kbs_excel_ure(cikti_yolu, db_yolu=None, takip_yolu=None):
                         "Giriş Tarihi", "Kişi Tipi", "Uyruk", "Doğum Tarihi", "Cinsiyet",
                         "Doğum Yeri", "Belge Türü", "Not"])
     for i, s in enumerate(giris, start=1):
-        ws.append([i, s["tc_no"], s["misafir_ad"], s["telefon"], s["oda"], s["tarih"],
-                   s["tip"].upper(), s["uyruk"], s["dogum_tarihi"], s["cinsiyet"],
-                   s["dogum_yeri"], s["belge_turu"], s["not"]])
+        ws.append([i, _guvenli_hucre(s["tc_no"]), _guvenli_hucre(s["misafir_ad"]),
+                   _guvenli_hucre(s["telefon"]), s["oda"], s["tarih"],
+                   s["tip"].upper(), _guvenli_hucre(s["uyruk"]), _guvenli_hucre(s["dogum_tarihi"]),
+                   _guvenli_hucre(s["cinsiyet"]), _guvenli_hucre(s["dogum_yeri"]),
+                   _guvenli_hucre(s["belge_turu"]), s["not"]])
     _genislik(ws, [("A", 5), ("B", 20), ("C", 24), ("D", 14), ("E", 16), ("F", 12),
                    ("G", 10), ("H", 12), ("I", 12), ("J", 10), ("K", 12), ("L", 12), ("M", 34)])
 
@@ -311,8 +399,8 @@ def kbs_excel_ure(cikti_yolu, db_yolu=None, takip_yolu=None):
     _baslik_satiri(ws2, ["No", "T.C. Kimlik / Belge No", "Ad Soyad", "Kat / Oda",
                          "Çıkış Tarihi", "Kişi Tipi", "Not"])
     for i, s in enumerate(cikis, start=1):
-        ws2.append([i, s["tc_no"], s["misafir_ad"], s["oda"], s["tarih"],
-                    s["tip"].upper(), s["not"]])
+        ws2.append([i, _guvenli_hucre(s["tc_no"]), _guvenli_hucre(s["misafir_ad"]),
+                    s["oda"], s["tarih"], s["tip"].upper(), s["not"]])
     _genislik(ws2, [("A", 5), ("B", 20), ("C", 24), ("D", 16), ("E", 12),
                     ("F", 10), ("G", 34)])
 

@@ -5,7 +5,7 @@
 Her sürümde SURUM arttirilir; guncelleme aracı ve kurulum paketi bu değeri kullanır."""
 
 UYGULAMA_ADI = "Misafirhane Rezervasyon"
-SURUM = "1.0.4.2"
+SURUM = "1.0.4.3"
 
 YENILIKLER = {
     "1.0.0": "İlk yayın sürümü. Rezervasyon, oda durumu, takvim, rapor ve yedekleme.",
@@ -51,6 +51,25 @@ YENILIKLER = {
                 "olarak silinir; Hayır seçilirse veriler korunur; İptal ile "
                 "kaldırma iptal edilir. Veri silme yalnızca kaldırma başarıyla "
                 "tamamlanınca yapılır.",
+    "1.0.4.3": "Kod incelemesi sonrası hata düzeltmeleri. KBS: oda değiştirmede "
+                "yabancı misafirin uyruk/doğum tarihi gibi bilgileri artık "
+                "kaybolmuyor; aynı misafir için mükerrer 'giriş' bildirimi ve "
+                "hâlâ otelde olan misafirin yanlışlıkla 'bugün çıkıyor' görünmesi "
+                "giderildi (rezervasyon_odalar tablosuna oda değiştirme zincirini "
+                "izleyen bir kolon eklendi, eski veritabanları otomatik "
+                "güncellenir). 'Gönderildi' takibi artık misafir bazlı (aynı "
+                "odadaki kişiler birbirini düşürmüyordu); yerli/yabancı ayrımı "
+                "TC No şekli yerine check-in'de toplanan bilgilere bakıyor (11 "
+                "haneli Yabancı Kimlik No'lu misafirler yanlış sınıflanmıyor); "
+                "T.C. Kimlik No artık gerçek sağlama algoritmasıyla doğrulanıyor. "
+                "KBS Excel çıktısına formül enjeksiyonu koruması eklendi, "
+                "bildirim geçmişi artık misafir/oda/tarih bilgisini de kaydediyor. "
+                "Çok odalı rezervasyonda 'Oda Değiştir' penceresini çökerten "
+                "eksik bir import düzeltildi. Oda değiştirmede kapasite kontrolü "
+                "artık check-in'deki gibi ekstra yatak hakkını da sayıyor. "
+                "Güncelleme aracı artık hataları sessizce yutmuyor, yanlış "
+                "sürümden gelen bir paketi uygulamıyor ve yedekleme "
+                "başarısızlığını kullanıcıya bildiriyor.",
 }
 
 
