@@ -3,6 +3,120 @@
 Bu dosya, evdeki masaüstü bilgisayardaki opencode oturumunun kaldığı yerden devam
 edebilmesi için hazırlandı. İlk iş olarak okuyun.
 
+## DEVAM (20 Eylül 2026) — Claude Code kod incelemesi + hata düzeltmeleri (1.0.4.3, release YOK)
+
+Bu bölüm **Claude Code** (Claude Sonnet 5) ile bu makinede (ev masaüstü)
+yapıldı; laptoptan devam edilecekse bu bölümü baştan sona okuyun — sonraki
+oturumun bilmesi gereken her şey burada.
+
+### Ne istendi, ne yapıldı
+Kullanıcı "projeyi denetle" dedi (CLAUDE.md, DEVAM.md, README.md okunduktan
+sonra `main.py`, `repository.py`, `detay_dialog.py`, `database.py`, `kbs.py`,
+`kbs_pencere.py`, `kurulum_araci.py`, `guncelleme_olustur.py` incelendi — 4
+paralel ajanla, her biri ~1300-2500 satırlık dosyaları uçtan uca okudu).
+Bulunan TÜM hatalar kullanıcı onayıyla düzeltildi (aşağıda), uygulama test
+DB'siyle (`misafirhane_deneme.db`) açılıp kullanıcı tarafından elle denendi,
+sonra **GitHub'a push edildi** (release/exe ÜRETİLMEDİ — kullanıcı özellikle
+istemedi, "sadece push, release gerek yok" dedi).
+
+**Commit'ler (main dalı):**
+- `8767217` — fonksiyonel düzeltmeler (kod + `versiyon.py` 1.0.4.3 +
+  `README.md` sürüm notu + yeni `oda_degistir_kbs_test.py`).
+- Bu commit'in hemen ardından bir docs commit'i — `CLAUDE.md` (bu oturuma
+  kadar git'e hiç commit'lenmemişti, ilk kez eklendi) ve bu `DEVAM.md` bölümü.
+
+### Düzeltilen hatalar (özet — ayrıntı için CLAUDE.md madde 4 "1.0.4.3")
+1. **[EN KRİTİK] KBS oda değiştirme hataları** — `repository.oda_degistir`
+   kalış ortasında oda değiştirirken satırı ikiye bölüyor (eski satır kesime
+   kadar, yeni satır kesimden devam). Üç hata vardı ve hepsi tek bir kök
+   nedene bağlıydı: eski ve yeni satır arasında hiçbir bağlantı yoktu.
+   - Yabancı misafirin KBS alanları (uyruk, doğum tarihi, cinsiyet, doğum
+     yeri, belge türü) yeni satıra kopyalanmıyordu.
+   - Eski satırın `cikis_tarihi`'si hiç set edilmiyordu → hem
+     `bugun_cikacaklar()` yanlışlıkla "bugün çıkıyor" gösteriyordu, hem de
+     `rezervasyon_listesi`'nin `acik_odasi` sayacı yüzünden bu rezervasyon
+     ASLA "Geçmiş Kayıtlar"a düşmüyordu (oda değiştirmiş her rezervasyon
+     sonsuza dek "açık" sayılıyordu — bunu ben (Claude) incelerken buldum,
+     orijinal bulgu listesinde yoktu).
+   - Aynı fiziksel misafir için KBS'de İKİ ayrı "giriş" bildirimi çıkıyordu
+     (eski + yeni satır, ikisi de `checkin_yapildi=1` ve kendi `misafirler`
+     kopyasıyla).
+   - **Çözüm:** `rezervasyon_odalar`'a `onceki_ro_id INTEGER` kolonu eklendi
+     (database.py, eski DB'ler için otomatik migrasyon var — `misafirler`
+     tablosundaki yabancı alan migrasyonuyla AYNI desen, test edildi: hem
+     sıfırdan DB hem eski şemalı DB üzerinde çalıştı, veri kaybı yok).
+     `oda_degistir` artık tüm yabancı alanları kopyalıyor, eski satırı kesim
+     tarihinde kapatıyor (`cikis_tarihi`), yeni satırı `onceki_ro_id` ile
+     eskiye bağlıyor. `kbs.kbs_bekleyenler` bu bağı kullanıyor.
+2. **KBS "gönderildi" takip anahtarı çakışması** — aynı odada 2+ misafir
+   varsa hepsi `"<ro_id>:giris"` anahtarını paylaşıyordu; birini işaretlemek
+   diğerlerini sessizce düşürüyordu. Anahtar artık misafir ID'sini de
+   içeriyor: `"<ro_id>:<misafir_id>:giris"`.
+3. **Yerli/yabancı yanlış sınıflandırma** — 11 haneli Yabancı Kimlik No
+   (YKN) taşıyan, bilgileri tam yabancı misafirler TC şekli yüzünden "yerli"
+   sayılabiliyordu. Yeni `kbs.misafir_tipi()` önce check-in'de toplanan
+   yabancı alanlarının doluluğuna bakıyor.
+4. **T.C. Kimlik No doğrulaması check-in'de zorunlu değildi** — sadece "11
+   haneli rakam" kontrol ediliyordu; gerçek sağlama algoritması
+   (`kbs.tc_dogrula`, zaten doğru yazılmıştı) yalnızca KBS Excel raporunda
+   bilgi notuydu, kaydı engellemiyordu. Artık check-in `tc_dogrula()` ile
+   zorunlu doğruluyor.
+5. **KBS Excel formül enjeksiyonu** — elle girilen alanlar (`=`/`+`/`-`/`@`
+   ile başlarsa) Excel'de formül sanılabiliyordu; artık `_guvenli_hucre()`
+   ile korunuyor. "BİLDİRİM GEÇMİŞİ" sekmesi artık tur/ad/TC/oda/tarih
+   bilgisini de kaydediyor (öncesinde hep boştu — kolonlar tanımlıydı ama
+   hiç yazılmıyordu).
+6. **Çok odalı "Oda Değiştir" çökmesi** — `main.py`'de `QInputDialog` üst
+   seviyede import edilmemişti; birden fazla odalı rezervasyonda "Oda
+   Değiştir"e tıklamak `NameError` ile çöküyordu. Düzeltildi + kullanılmayan
+   3 import temizlendi.
+7. **Kapasite/transaction/hata yönetimi** — oda değiştirmede kapasite
+   kontrolü artık ekstra yatak hakkını da sayıyor (`repository.oda_liman()`
+   ile üç yerdeki tekrar birleştirildi); misafir kaydı + ödeme yeniden
+   hesaplama artık tek transaction'da; İstatistik sekmesi hata olduğunda
+   "0" değil açık uyarı gösteriyor.
+8. **Güncelleme aracı** (`guncelleme_araci/guncelle.py`) — artık her hatayı
+   yakalayıp gösteriyor (öncesinde `--windowed` exe sessizce çökebiliyordu);
+   yanlış/eski sürümden gelen paket engelleniyor (`onceki_surum` kontrolü);
+   yedekleme başarısız olursa kullanıcı bilgilendiriliyor.
+9. **Kurulum Aracı** — `calistir_bekle()`'de WinAPI dönüş değerleri artık
+   kontrol ediliyor (veri silme kararını etkileyen `kod==0` asla varsayılan
+   olarak dönmüyor).
+
+### Bilinçli DEĞİŞTİRİLMEYEN noktalar (bug değil, tasarım/kalite kararı)
+- KBS "bekleyen çıkışlar" listesi hâlâ "bugün"le sınırlı değil — kasıtlı,
+  güvenlik ağı (hiç bildirilmemiş eski kayıtları da göstermeli).
+- `main.py`'deki fiyat önizleme tekrarı, `CheckinDialog`'daki index'li tuple
+  yapısı, `repository.py`'de ~8 yerde tekrarlanan "etkin çıkış tarihi" SQL
+  parçası: kod kalitesi/bakım konusu, değiştirmenin riski faydasından büyük.
+
+### Test
+`py_compile` tüm değişen dosyalarda geçti. Mevcut testler: `kbs_test.py`
+(repoda), `buton_test.py`, `coklu_test.py` (Temp\opencode) geçti. Yeni
+`oda_degistir_kbs_test.py` (repo köküne eklendi, izole TEMP DB kullanır,
+gerçek veriye dokunmaz) yazıldı ve geçti — oda değiştirme + KBS zincirini
+uçtan uca doğruluyor (mükerrer giriş yok, sahte çıkış yok, yabancı bilgisi
+korunuyor, gerçek çıkışta doğru tek bildirim). `gece_ui_test.py`
+(Temp\opencode, bu oturumda dokunulmamış bir alan) bu makinede takılıp kaldı
+— ortamla ilgili önceden var olan bir sorun gibi duruyor, araştırılmadı,
+düzeltmelerle ilgisi yok. Uygulama `dev_canli_calistir.py` ile test DB'siyle
+açıldı, kullanıcı elle denedi, sorun bildirmedi.
+
+### Laptopta devam ederken bilinmesi gerekenler
+- `git pull` sonrası kod 1.0.4.3 düzeltmelerini içerir ama **exe/kurulum
+  paketi ÜRETİLMEDİ** (release yok). Gerekirse CLAUDE.md madde 6'daki
+  adımlarla üretilebilir.
+- `misafirhane_deneme.db` / `misafirhane.db` / `kbs_takip.db` gitignore'lu —
+  laptopta YOK. Test için gerekiyorsa yeniden oluşturulmalı (bkz.
+  Temp\opencode'daki `kbs_musteri_db_olustur.py` gibi araçlar, onlar da
+  gitignore'lu/yerel — laptopta yoksa sıfırdan yazılmalı) ya da ev
+  bilgisayarından elle taşınmalı.
+- `CLAUDE.md` bu oturuma kadar git'e hiç girmemişti; artık girdi — laptopta
+  `git clone`/`pull` sonrası mevcut olacak.
+- Ev makinesinde daha önceden bilinen commit'siz iş hâlâ geçerli:
+  `guncelleme_olustur.py` A+B (TAM paket) ve `guncelle.py` sürüm kapısı
+  değişiklikleri bu repoya hiç taşınmadı (bkz. aşağıdaki "1.0.4.1" bölümü).
+
 ## DEVAM (20 Eylül 2026) — Kurulum Aracı: veri silme seçeneği (1.0.4.2)
 
 `kurulum_araci.py` güncellendi ve sürüm **1.0.4.2** olarak release edildi:
