@@ -16,6 +16,7 @@ Elle zorlamak icin MISAFIRHANE_TEMA=acik|karanlik ortam degiskeni verilebilir.
 
 import ctypes
 import os
+import shutil
 import subprocess
 import sys
 import threading
@@ -173,6 +174,16 @@ def kaldirma_yolu():
     return deger
 
 
+def veri_klasoru():
+    """Uygulama verilerinin tutuldugu klasor (%LOCALAPPDATA%\\Misafirhane).
+
+    database.py ile ayni kural: dondurulmus surumde veri LOCALAPPDATA altina
+    yazilir. Bu araç da verileri doğrudan bu yoldan bulur.
+    """
+    taban = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
+    return os.path.join(taban, "Misafirhane")
+
+
 def gomulu_kurulum_arac():
     """Gomulu kurulum exe'sinin yolunu bulur (frozen veya kaynak)."""
     if getattr(sys, "frozen", False):
@@ -225,6 +236,7 @@ class KurulumAraci:
 
         self.bilgi = kurulum_durumu()
         self.calisiyor = False
+        self.verileri_sil = False
 
         self._arayuz_kur()
         self._durumu_goster()
@@ -298,9 +310,10 @@ class KurulumAraci:
         Label(
             info,
             text=(
-                "Seçilen işlem tüm program dosyalarını yeniler. Verileriniz "
-                "(misafirhane.db ve yedekler) %LOCALAPPDATA%\\Misafirhane "
-                "içinde saklandığından KORUNUR."
+                "Güncelleme/Tamir işlemleri tüm program dosyalarını yeniler; "
+                "verileriniz (misafirhane.db ve yedekler) %LOCALAPPDATA%\\Misafirhane "
+                "içinde saklandığından KORUNUR. Kaldırma sırasında verilerin "
+                "korunup korunmayacağı ayrıca size sorulur."
             ),
             justify="left",
             anchor="w",
@@ -467,29 +480,59 @@ class KurulumAraci:
             self.bilgi = kurulum_durumu()
             self._durumu_goster()
             return
-        onay = messagebox.askyesno(
+        onay = messagebox.askyesnocancel(
             "Kaldırmayı onaylayın",
             "Misafirhane Rezervasyon bilgisayardan KALDIRILACAK.\n\n"
-            "Verileriniz (misafirhane.db ve yedekler) %LOCALAPPDATA%\\Misafirhane "
-            "klasöründe KORUNUR ve silinmez.\n\nDevam edilsin mi?",
+            "Verileriniz (misafirhane.db, kbs_takip.db ve yedekler) "
+            "%LOCALAPPDATA%\\Misafirhane klasöründe tutulur.\n\n"
+            "Veritabanını ve verileri de silmek ister misiniz?\n"
+            "  • Evet  → Uygulama kaldırılır, veriler DE SİLİNİR\n"
+            "  • Hayır → Uygulama kaldırılır, veriler KORUNUR\n"
+            "  • İptal → Kaldırma iptal edilir",
         )
-        if not onay:
+        if onay is None:
             return
+        self.verileri_sil = bool(onay)
         subprocess.run(["taskkill", "/F", "/T", "/IM", "Misafirhane.exe"],
                        capture_output=True)
         self.calisiyor = True
-        self._durumu_goster(mesaj="Kaldırma işlemi başlatılıyor... UAC onayı açılacak.")
+        if self.verileri_sil:
+            mesaj = "Kaldırma işlemi başlatılıyor... Veriler silinecek. UAC onayı açılacak."
+        else:
+            mesaj = "Kaldırma işlemi başlatılıyor... Veriler korunacak. UAC onayı açılacak."
+        self._durumu_goster(mesaj=mesaj)
         threading.Thread(target=self._calistir_kaldir, args=(yol,), daemon=True).start()
 
     def _calistir_kaldir(self, yol):
         kod = calistir_bekle(yol)
         self.root.after(0, self._kaldirma_bitti, kod)
 
+    def _verileri_sil(self):
+        """Uygulama veri klasorunu siler; sorun olursa hata mesajini dondurur."""
+        klasor = veri_klasoru()
+        if not os.path.isdir(klasor):
+            return ""
+        try:
+            shutil.rmtree(klasor)
+            return "" if not os.path.isdir(klasor) else "klasör hâlâ duruyor"
+        except OSError as hata:
+            return str(hata)
+
     def _kaldirma_bitti(self, kod):
         self.calisiyor = False
         self.bilgi = kurulum_durumu()
+        if kod == 0 and self.verileri_sil:
+            veri_hatasi = self._verileri_sil()
+        else:
+            veri_hatasi = ""
         if kod == 0:
-            mesaj = "Uygulama başarıyla kaldırıldı. Verileriniz korundu."
+            if self.verileri_sil and not veri_hatasi:
+                mesaj = "Uygulama başarıyla kaldırıldı. Veriler de silindi."
+            elif self.verileri_sil and veri_hatasi:
+                mesaj = ("Uygulama kaldırıldı ancak veri klasörü silinemedi "
+                         f"({veri_hatasi}). El ile silmeniz gerekebilir.")
+            else:
+                mesaj = "Uygulama başarıyla kaldırıldı. Verileriniz korundu."
             kutubg, kutufg = TEMA["saglikli_bg"], TEMA["saglikli_fg"]
         elif kod == 2:
             mesaj = "Kaldırma işlemi iptal edildi."

@@ -84,7 +84,7 @@ Araç, `Misafirhane Rezervasyon` klasörünü ve kayıt defterini tarayarak prog
 | **Yükle** | Bilgisayarda kurulum yoksa kurar (UAC onayı açılır). |
 | **Güncelle** | Kurulu sürümü yerinde günceller; veriler korunur. |
 | **Tamir Et** | Dosyaları yeniden yazarak bozuk kurulumu onarır. |
-| **Uygulamayı Kaldır** | Programı kaldırır; **veriler `%LOCALAPPDATA%\Misafirhane` altında korunur**. |
+| **Uygulamayı Kaldır** | Programı kaldırır; kaldırma sırasında **veritabanının da silinip silinmeyeceğini sorar** (Evet → veriler de silinir, Hayır → veriler `%LOCALAPPDATA%\Misafirhane` altında korunur, İptal → kaldırma iptal edilir). |
 
 Varsayılan tema Windows'un koyu/açık mod ayarından okunur. Uygulama açıkken güncelleme/tamir/kaldırma yapılırsa `Misafirhane.exe` önce otomatik kapatılır. 1.0.4.1 sürümünün SHA256'sı: `2D72A5BEC08BA70A6D0945B0FF82AB537D4B8737E6A8E579BB1D93C33724BD18`.
 
@@ -149,6 +149,7 @@ kurulum.iss            Inno Setup kurulum betiği
 
 | Sürüm | Not |
 |-------|-----|
+| 1.0.4.2 | **Kurulum Aracı — veri silme seçeneği**: Kaldırma sırasında "veritabanını ve verileri de silmek ister misiniz?" sorulur (Evet → `%LOCALAPPDATA%\Misafirhane` kalıcı silinir, Hayır → veriler korunur, İptal → kaldırma iptal). Veri silme yalnızca kaldırma başarıyla bitince yapılır. |
 | 1.0.4.1 | **Kurulum Aracı** (tek exe): Yükle / Güncelle / Tamir Et / Kaldır; programın durumu otomatik algılanır, gömülü kurulum UAC ile çalışır; arayüz Windows'un koyu/açık mod ayarına göre otomatik tema seçer; kaldırma sırasında veriler korunur. Eski hibrit `Misafirhane_Kurulum` exe'sinin yerine geçer. |
 | 1.0.4 | **KBS Bildirimi**: bekleyen giriş/çıkışlar, şahıs TC doğrulaması, gönderildi işaretleme, `kbs_takip.db`, Excel çıktısı. **Yabancı misafir KBS alanları** check-in'de toplanır ve eksik bilgi engellenir; **TC doğrulama**. **Arayüz yeniden tasarımı**: kompakt tema + rozetler, rezervasyon detayı splitter düzeni, oda işlemlerinin tablo altı aksiyon çubuğuna taşınması (buton sığmama sorunu çözüldü), birincil/ikincil buton stilleri, Oda Durumu çift özet düzeltmesi, gerçek kullanıcı adı gösterimi. **Gece uzat/kısalt** içerideki misafirde de çalışır; **çakışmada gece azaltma önerisi + onay** akışı; canlı çıkış/çakışma önizlemesi. |
 | 1.0.3 | Çok odalı rezervasyon (tek kayıtta birden çok oda, oda satırı bazlı check-in/çıkış/oda değiştirme); **Geçmiş Kayıtlar** görünümü (çıkışı yapılmış eski misafirler, arama/sıralama/Excel); Günün Girişleri'nde çok odalı rezervasyon tek satır + oda bazlı Geldi/Gelmedi/Bekleniyor durumu; performans (arama yalnızca Ad Soyad'da anında filtrelenir, gecikmeli yenileme + toplu sorgular — büyük listelerde kasma yok); düzeltmeler: Oda Değiştir / Tarih Değiştir pencerelerinin açılmama hatası, iptal listesinde satır renklendirme çökmesi |

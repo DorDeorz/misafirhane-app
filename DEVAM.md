@@ -3,6 +3,21 @@
 Bu dosya, evdeki masaüstü bilgisayardaki opencode oturumunun kaldığı yerden devam
 edebilmesi için hazırlandı. İlk iş olarak okuyun.
 
+## DEVAM (20 Eylül 2026) — Kurulum Aracı: veri silme seçeneği (1.0.4.2)
+
+`kurulum_araci.py` güncellendi ve sürüm **1.0.4.2** olarak release edildi:
+- **Kaldırmada 3'lü seçim**: `askyesnocancel` ile "Veritabanını ve verileri de
+  silmek ister misiniz?" sorar. Evet → kaldırma başarılı olursa
+  `%LOCALAPPDATA%\Misafirhane` (`veri_klasoru()`, `database.py` ile aynı kural)
+  `shutil.rmtree` ile silinir; Hayır → veriler korunur; İptal → kaldırma iptal.
+- Veri silme yalnızca uninstaller çıkış kodu 0 olunca yapılır; silme hatasında
+  "el ile silmeniz gerekebilir" uyarısı gösterilir. `import shutil` eklendi.
+- README'deki "Uygulamayı Kaldır" satırı güncellendi. Durum bitti mesajı seçime
+  göre değişir ("veriler de silindi" / "verileriniz korundu").
+- Bu bilgisayarda uçtan uca test edildi (kaldırma + veri silme akışı çalıştı);
+  sonrasında 1.0.4.2 paketi (Kurulum Aracı + Kurulum + Guncelleme + standalone)
+  derlenip GitHub Releases'e yüklendi ve kod push edildi.
+
 ## DEVAM (20 Eylül 2026) — 1.0.4.1 (push edildi)
 
 Bu oturumda yapıldı:

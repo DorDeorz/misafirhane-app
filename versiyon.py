@@ -5,7 +5,7 @@
 Her sürümde SURUM arttirilir; guncelleme aracı ve kurulum paketi bu değeri kullanır."""
 
 UYGULAMA_ADI = "Misafirhane Rezervasyon"
-SURUM = "1.0.4.1"
+SURUM = "1.0.4.2"
 
 YENILIKLER = {
     "1.0.0": "İlk yayın sürümü. Rezervasyon, oda durumu, takvim, rapor ve yedekleme.",
@@ -44,6 +44,13 @@ YENILIKLER = {
                 "arayüz Windows'un koyu/açık mod ayarıyla otomatik eşleşir. "
                 "Kaldırma sırasında veriler (%LOCALAPPDATA%\\Misafirhane) korunur. "
                 "Eski tek amaçlı hibrit Kurulum exe'sinin yerini alır.",
+    "1.0.4.2": "Kurulum Aracı'nda Kaldırma seçeneği geliştirildi: uygulama "
+                "kaldırılırken 'Veritabanını ve verileri de silmek ister misiniz?' "
+                "diye sorulur. Evet seçilirse veri klasörü (%LOCALAPPDATA%\\"
+                "Misafirhane: misafirhane.db, kbs_takip.db ve yedekler) kalıcı "
+                "olarak silinir; Hayır seçilirse veriler korunur; İptal ile "
+                "kaldırma iptal edilir. Veri silme yalnızca kaldırma başarıyla "
+                "tamamlanınca yapılır.",
 }
 
 
