@@ -10,8 +10,10 @@ Kullanim (proje klasorunde):
          SADECE degisen dosyalari dagitim/guncelle_<SURUM>/ paketine koyar
          ve Misafirhane_Guncelleme_<SURUM>.exe uretir.
   python guncelleme_olustur.py --tam
-      -> Ayni islemler + tam kurulum dosyasini yeniden uretir (yeni kurulumlarda)
-         ve dagitim/Misafirhane_Kurulum_<SURUM>.exe olarak kopyalar.
+      -> Ayni islemler + tam kurulum motorunu (Inno) uretir ve
+         Kurulum Aracı'nda gomulu kullanilir. Ayri bir
+         Misafirhane_Kurulum_<SURUM>.exe artik URETILMEZ — tek kurulum
+         araci (Misafirhane_Kurulumu_<SURUM>.exe) tum isleri yapar.
 
 Cikti: dagitim/ klasoru (gitignore'ludur). Masauette dagitim, diger
 bilgisayarda calistirilacak guncelleme exe'sidir.
@@ -35,7 +37,6 @@ UYGULAMA_ADI = versiyon.UYGULAMA_ADI
 YENI_KLASOR = os.path.join(ROOT, "dagitim", f"guncelle_{SURUM}")
 MANIFEST = os.path.join(ROOT, "dagitim", "son_manifest.json")
 GUNCELLEME_EXE = os.path.join(ROOT, "dagitim", f"Misafirhane_Guncelleme_{SURUM}.exe")
-KURULUM_EXE = os.path.join(ROOT, "dagitim", f"Misafirhane_Kurulum_{SURUM}.exe")
 DIST_APP = os.path.join(ROOT, "dist", "Misafirhane")
 
 
@@ -147,20 +148,22 @@ def guncelleme_exe():
 
 
 def tam_kurulum():
-    print("[4/4] Tam kurulum exe uretiliyor (Inno Setup) ...")
+    print("[4/4] Inno kurulum motoru derleniyor (Kurulum Aracı icin gomulu) ...")
     iscc = os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs", "Inno Setup 6", "ISCC.exe")
     if not os.path.exists(iscc):
         iscc = r"C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
     if not os.path.exists(iscc):
-        print("  ISCC bulunamadi; tam kurulum atlandi.")
+        print("  ISCC bulunamadi; kurulum motoru atlandi.")
         return
     subprocess.run([
         iscc, "/DMyAppVersion=" + SURUM, os.path.join(ROOT, "kurulum.iss"),
     ], cwd=ROOT, check=True)
     cikti = os.path.join(ROOT, "dist", "kurulum", "Misafirhane_Kurulum.exe")
     if os.path.exists(cikti):
-        shutil.copy2(cikti, KURULUM_EXE)
-        print(f"  Kurulum: {KURULUM_EXE}")
+        print(f"  Motor exe: {cikti}")
+        print("  Ayri Misafirhane_Kurulum_<surum>.exe artik uretilmiyor; "
+              "tek Kurulum Aracı (Misafirhane_Kurulumu) tum kurulum "
+              "islemlerini karsiliyor.")
 
 
 def manifesti_guncelle(yeni_map):
