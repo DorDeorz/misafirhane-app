@@ -489,6 +489,53 @@ misafir isterse ayrıca fatura kesiliyor (ödemeden SONRA, misafirin isteği
   düzenleme engeli, telefon doğrulama vakaları) yazılıp geçti; `buton_test.py`,
   `coklu_test.py` (Temp\opencode) tekrar tekrar çalıştırıldı, hepsi geçti.
 
+### 1.0.4.6 (ilk commit `4cf1742`, ev masaüstünde Claude Code ile yapıldı, push
+edildi — **Release YOK**, yalnızca kod + doküman)
+
+Kullanıcının ürettiği iki istek:
+
+- **'Temizlikte'/'Arızalı' oda çift tıklamayla temize çekme.** Nereden:
+  (1) Oda Durumu sekmesinin durum kolonundan (boş oda hücresine çift tık →
+  `OdaDurumuTab.oda_durum_islem`, `Qt.UserRole+1`'de `oda_id`,
+  `Qt.UserRole+2`'de `aktif_durum` — `gunun_oda_durumu` artık `o.id as oda_id`
+  döndürüyor); (2) Yeni Rezervasyon'daki mini takvimden (temizlikte/arızalı
+  blok → `TakvimGridWidget._hucre_cift_tiklandi` → `_odayi_temize_cek`, onay
+  sonrası `oda_durum_ayarla(oda,'temiz')` + `oda_durumu_degisti` sinyali +
+  grid yenilenir); (3) Rezervasyon Yönetimi'ndeki 'Oda' sütunundan
+  (`_odadaki_temizligi_sor`: rezervasyonun odaları `_odanin_efektif_durumu`
+  ile filtrelenir, iptal satırları atlanır, tek/çok odalı seçim akışı).
+  **Düzeltme:** `_odadaki_temizligi_sor` başta `sqlite3.Row.get()` kullanıyordu
+  (Row'ta `.get()` yok); `rezervasyon_odalar_listele` sonucu
+  `[dict(r) for r in ...]` ile çevrilerek çözüldü. `repository`:
+  `rezervasyon_odalar_listele` SELECT'ine `o.durum, o.ariza_bitis` eklendi.
+  Ayrıca bağımsız **Takvim Görünümü** penceresi de bundan yararlanıyor —
+  kullanıcının tespitiyle pencere artık `yenile_callback=self._tumunu_yenile`
+  alıyor (`TakvimPenceresi(yenile_callback=...)`), oda temizlendiğinde arka
+  plandaki ana pencerenin Oda Durumu/Çıkış gibi sekmeleri de otomatik
+  yenileniyor (önceden yalnızca pencere içi grid yenileniyordu).
+- **Aynı gün girip aynı gün çıkan misafirin hesabı.** Normal erken çıkışta
+  bugünün gecesi ücrete girmez (kural böyle, çünkü misafir o geceyi
+  geçirmiyor) ama aynı gün giriş+çıkışta o gece de ücrete giriyor.
+  `CikisTab._satir_borcu` artık `giris_tarihi == kesim_tarihi` ise bugünkü
+  ödenmemiş ödeme kaydını borca ekliyor (liste gösterimi). `_cikisi_uygula`
+  yeniden yazıldı: aynı gün ise ve bugünkü gece **ödenmemişse** → "Tahsil
+  edilsin mi?" (Evet → `_odeme_sekli_sec` ile ödeme şekli seçilir,
+  `odeme_guncelle(...,True,sekli)`; Hayır → `odasi_cikis_yap` zaten
+  `odendi=0` kaydı siler); **ödenmişse** → "İade yapıldı mı?" (Evet → yeni
+  `repository.odeme_sil(odeme_id)` ile kayıt silinir). Aynı gün gecesi,
+  genel "önceden ödenmiş geceler" bilgi kutusundan filtrelenir (zaten özel
+  akışta karara bağlandığı için kafa karıştırmasın). Yalnızca çıkış
+  sekmesinin satırlarına dokunuldu — normal erken çıkış davranışı değişmedi.
+  **Bilinen tutarsızlık:** `detay_dialog.py` `_odada_cikis` (rezervasyon
+  detayındaki çıkış butonu) aynı borç mantığını kendi başına işletiyor ve bu
+  aynı-gün kuralını içermiyor — kullanıcıya soruldu, sonraki oturumda
+  karar verilecek (madde 10 / DEVAM.md).
+- Test: geçici DB'de 33 kontrollük otomatik test (`Temp\opencode\feature_test.py`):
+  efektif durum, `gunun_oda_durumu` rolleri, temizleme (temizlikte + arızalı,
+  süresi dolan arıza, dolu oda engeli), aynı gün kuralı borç toplamı,
+  tahsil/iade dalları, `_cikisi_uygula` uçtan uca, erken tablo görünümü,
+  takvim ve bağımsız takvim penceresi callback'i — hepsi geçti.
+
 ---
 
 ## 5. GitHub yapısı ve kuralları
@@ -509,6 +556,9 @@ misafir isterse ayrıca fatura kesiliyor (ödemeden SONRA, misafirin isteği
   - **1.0.4.3 için release YOK** (kullanıcı özellikle istemedi — sadece kod
     push edildi, `Misafirhane_Kurulumu_1.0.4.3.exe` vb. üretilmedi/yüklenmedi).
     Bu hâlâ doğru — 1.0.4.3 hiç release edilmedi, sadece 1.0.4.4 edildi.
+  - **1.0.4.6 (commit `4cf1742` + docs commit'i) için release YOK** — sürüm
+    yeni yükseltildi, kullanıcı laptopta test edecek; release'i kullanıcı
+    istemeden oluşturma.
   - **1.0.4.4 için GitHub Release VAR** (bkz. yukarı). Önceki bir not burada
     "release yok" diyordu, bu 21 Eylül 2026'da `gh release list` ile
     doğrulanıp düzeltildi — ayrıntı için madde 4'teki "1.0.4.4" bölümünün
@@ -578,13 +628,12 @@ misafir isterse ayrıca fatura kesiliyor (ödemeden SONRA, misafirin isteği
 
 ## 8. Mevcut durum + bilinen eksikler / öneriler
 
-- Git HEAD: `f45882b` (main) + hemen ardından bir docs commit'i (bu dosya ve
-  DEVAM.md'yi günceller), çalışma ağacı temiz. En yeni sürüm: **1.0.4.5**
-  — **GitHub Release VAR** (`v1.0.4.5`, `Latest`, 3 asset — bkz. madde 5),
-  bu sefer gerçekten bu oturumda `gh release create` ile açıldı (önceki
-  1.0.4.4 release'i gibi belirsizlik yok). Ders (tekrar): bir sürüm
-  eklerken madde 4, 5 VE 8'in hepsi güncellenmeli — bu oturum bu üçünü de
-  güncelledi.
+- Git HEAD: `7b61dbe` (main) + hemen ardından bir docs commit'i (bu dosya ve
+  DEVAM.md'yi günceller), çalışma ağacı temiz. En yeni sürüm: **1.0.4.6**
+  — **GitHub Release YOK** (yalnızca kod push edildi: `4cf1742` özellikler +
+  `7b61dbe` sürüm/README; release kullanıcı laptopta test edip isteyince
+  açılır). Ders (tekrar): bir sürüm eklerken madde 4, 5 VE 8'in hepsi
+  güncellenmeli — bu oturum bu üçünü de güncelledi.
 - Bu `CLAUDE.md` dosyası 1.0.4.3'e kadar (yani epeyce geç) **git'e hiç
   commit'lenmemişti** (yerelde vardı, push edilmemişti) — 1.0.4.3 docs
   commit'iyle ilk kez repoya girdi. Artık her `git clone`/`pull` ile gelir.
@@ -601,18 +650,25 @@ misafir isterse ayrıca fatura kesiliyor (ödemeden SONRA, misafirin isteği
      yazılan smoke testler (iptal engeli/borç/erken-çıkış/aynı-gün-kilit/
      Sil butonu) kalıcı repoya EKLENMEDİ (scratchpad'te kaldı) — istenirse
      bunlar da `oda_degistir_kbs_test.py` gibi kalıcı hale getirilebilir.
-  4. 1.0.4.5 exe'leri (`dist/Misafirhane_Kurulumu_1.0.4.5.exe`,
-     `dagitim/Misafirhane_Guncelleme_1.0.4.5.exe`,
-     `dist/Misafirhane_1.0.4.5.exe`) yerelde (bu makinede) ve GitHub
-     Release'inde mevcut; kullanıcının Masaüstü'ne bu sefer kopyalanmadı
-     (istenmedi) — istenirse kopyalanabilir.
-  5. **Güncelleme exe'si baseline kısıtı:** `Misafirhane_Guncelleme_1.0.4.5.exe`
-     bu makinedeki eski (1.0.4.2) `dagitim/son_manifest.json` baseline'ına
-     göre üretildi — bkz. madde 4 "1.0.4.5" bölümündeki "ÖNEMLİ KISIT" notu.
-     Kurulu gerçek sürüm 1.0.4.2 değilse bu exe kendini güvenle reddeder
-     (veri kaybı yok), kullanıcı "Tamir Et" kullanmalı. Bir sonraki
-     derlemede bu makinenin `dagitim/son_manifest.json`'ı güncel olacağından
-     (bu build onu tazeledi) aynı sorun tekrar YAŞANMAZ.
+4. 1.0.4.5 exe'leri (`dist/Misafirhane_Kurulumu_1.0.4.5.exe`,
+      `dagitim/Misafirhane_Guncelleme_1.0.4.5.exe`,
+      `dist/Misafirhane_1.0.4.5.exe`) yerelde (bu makinede) ve GitHub
+      Release'inde mevcut; kullanıcının Masaüstü'ne bu sefer kopyalanmadı
+      (istenmedi) — istenirse kopyalanabilir.
+   5. **Güncelleme exe'si baseline kısıtı:** `Misafirhane_Guncelleme_1.0.4.5.exe`
+      bu makinedeki eski (1.0.4.2) `dagitim/son_manifest.json` baseline'ına
+      göre üretildi — bkz. madde 4 "1.0.4.5" bölümündeki "ÖNEMLİ KISIT" notu.
+      Kurulu gerçek sürüm 1.0.4.2 değilse bu exe kendini güvenle reddeder
+      (veri kaybı yok), kullanıcı "Tamir Et" kullanmalı. Bir sonraki
+      derlemede bu makinenin `dagitim/son_manifest.json`'ı güncel olacağından
+      (bu build onu tazeledi) aynı sorun tekrar YAŞANMAZ.
+   6. **Rezervasyon detayındaki çıkış akışı aynı-gün kuralından yoksun:**
+      `detay_dialog.py` `_odada_cikis`, `CikisTab`'ten bağımsız kendi çıkış
+      modelini işletiyor (aynı borç büyütme mantığı) ama 1.0.4.6'da eklenen
+      "aynı gün girip çıkan misafirin bugünkü gecesi" kuralını içermiyor.
+      Kullanıcıya soruldu; karar sonraki oturumda — isterse bu akış da
+      `_cikisi_uygula`-benzeri tahsil/iade dialoglarını kullanacak (bkz.
+      madde 10 ve DEVAM.md).
 
 ## 9. Çalışma kuralları (bu projede)
 
@@ -641,6 +697,9 @@ misafir isterse ayrıca fatura kesiliyor (ödemeden SONRA, misafirin isteği
 - Bir sonraki sürüm(ler) için özellik/eksik önceliklendirmesi. **Not:**
   kullanıcı büyük/modern bir arayüz yeniden tasarımını 1.0.4.4'te denedi ve
   beğenmedi, geri aldırdı — tekrar önerilmemeli.
+- **`detay_dialog._odada_cikis` kararı:** aynı-gün (giriş == çıkış) hesabının
+  rezervasyon detayındaki çıkış butonuna da uygulanıp uygulanmayacağı
+  (bkz. madde 8 eksik 6) — kullanıcıdan onay bekliyor.
 - **Herhangi bir makineden devam ederken:** `git pull` sonrası bu dosyayı ve
   `DEVAM.md`'yi oku (madde 4'teki en son sürüm bölümü ve DEVAM.md'nin en
   üstü) — ama release durumu için bu dosyaya değil `gh release list` çıktısına

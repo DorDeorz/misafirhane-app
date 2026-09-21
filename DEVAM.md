@@ -3,6 +3,40 @@
 Bu dosya, evdeki masaüstü bilgisayardaki opencode oturumunun kaldığı yerden devam
 edebilmesi için hazırlandı. İlk iş olarak okuyun.
 
+## DEVAM (21 Eylül 2026) — Temizlik/arıza çift tıklama + aynı gün giriş-çıkış hesabı (1.0.4.6, Release YOK)
+
+Ayrıntı için `CLAUDE.md` madde 4 "1.0.4.6" bölümüne bakın — özet:
+
+- **Temizlikte/arızalı oda çift tıklamayla temize çekiliyor:** Oda Durumu durum
+  kolonu, Yeni Rezervasyon'daki mini takvim ve Rezervasyon Yönetimi "Oda"
+  sütunu. Üçü de "Oda temizlendi mi?" onayından sonra `oda_durum_ayarla(oda,
+  'temiz')` çağırır; arızalıda `ariza_bitis` de sıfırlanır; dolu odalarda
+  engellenir. `repository.rezervasyon_odalar_listele` artık `o.durum,
+  o.ariza_bitis` döndürüyor; `_odadaki_temizligi_sor` satırları `dict`'e
+  çevirmeye başladı (sqlite3.Row'da `.get()` yok — test yakaladı).
+- **Aynı gün girip çıkan misafir:** normal erken çıkışta bugünün gecesi
+  sayılmaz ama aynı gün giriş+çıkışta sayılır. `_satir_borcu` aynı gün kaydını
+  borca ekler; `_cikisi_uygula` ödenmemişse "Tahsil edilsin mi?" (Evet →
+  `_odeme_sekli_sec` + `odeme_guncelle`), ödenmişse "İade yapıldı mı?" (Evet →
+  yeni `repository.odeme_sil`) sorar; aynı gün gecesi genel "önceden ödenmiş
+  geceler" bilgisinden filtrelenir.
+- **Kullanıcının tespiti:** bağımsız Takvim Görünümü penceresinden oda
+  temizlenince ana pencerenin diğer sekmeleri bayat kalıyordu →
+  `TakvimPenceresi(yenile_callback=...)` eklendi, `takvim_penceresini_ac` bunu
+  `_tumunu_yenile` ile bağladı; pencere etiketi "salt okunur" ibaresinden
+  kurtuldu.
+- **Test:** `Temp\opencode\feature_test.py` — geçici DB'de 33 kontrol (efektif
+  durum, `gunun_oda_durumu` rolleri, temiz akışı/engeller, aynı gün borç ve
+  tahsil/iade dalları uçtan uca, erken tablo görünümü, takvim + bağımsız
+  takvim callback) — hepsi geçti. `py_compile` temiz.
+- **Commit'ler:** `4cf1742` (fonksiyonel + `versiyon.py` 1.0.4.6 + README) ve
+  ardından docs commit'i (`CLAUDE.md`/`DEVAM.md`). **Release açılmadı** —
+  kullanıcı laptopta test edecek, isterse açılır.
+- **SONRAKİ OTURUMA KALAN SORU:** rezervasyon detayındaki çıkış butonu
+  (`detay_dialog.py` `_odada_cikis`) aynı borç mantığını kendi işletiyor ve
+  aynı-gün kuralını içermiyor — bu oturumda kapsam dışında bırakıldı,
+  kullanıcıya soruldu. Laptop oturumu bu kararı vermeli.
+
 ## DEVAM (21 Eylül 2026) — Fatura takibi + Nakit kaldırma, hata düzeltmeleri, derleme + Release (1.0.4.5)
 
 Bu bölüm **ev masaüstünde**, aynı Claude Code oturumunda (1.0.4.3'ü yapan
