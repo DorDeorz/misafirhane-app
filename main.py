@@ -69,8 +69,9 @@ def _telefon_gecerli_mi(metin):
 # TAB 1: ODA DURUMU (o günün check-in listesi -> 2.jpeg sağ sayfa)
 # ============================================================
 class OdaDurumuTab(QWidget):
-    def __init__(self):
+    def __init__(self, yenile_callback=None):
         super().__init__()
+        self.yenile_callback = yenile_callback
         layout = QVBoxLayout(self)
         layout.setSpacing(6)
 
@@ -112,7 +113,9 @@ class OdaDurumuTab(QWidget):
         tabloyu_kompakt_yap(self.tablo)
         self.tablo.setToolTip(
             "Ödeme durumuna çift tıklayarak ödendi/ödenmedi işaretleyebilirsin. "
-            "Diğer sütunlara (isim, TC vb.) çift tıklayarak misafirin bilgilerini düzenleyebilirsin."
+            "Oda Durumu sütununa (Temizlikte/Arızalı) çift tıklayarak odayı TEMİZ olarak "
+            "işaretleyebilirsin. Diğer sütunlara (isim, TC vb.) çift tıklayarak misafirin "
+            "bilgilerini düzenleyebilirsin."
         )
         layout.addWidget(self.tablo, stretch=1)
 
@@ -176,6 +179,8 @@ class OdaDurumuTab(QWidget):
                             tema.renklendir(item, "#fdebd0")
                         elif durum == "arizali":
                             tema.renklendir(item, "#d9d9d9")
+                        item.setData(Qt.UserRole + 1, r["oda_id"])
+                        item.setData(Qt.UserRole + 2, durum)
                 else:
                     item.setData(Qt.UserRole, r["rez_id"])
                     if gelmedi:
@@ -226,7 +231,8 @@ class OdaDurumuTab(QWidget):
             self.odeme_isle(row, col)
             return
         if col == 11:
-            return  # oda durumu bogundaydi, detay yok
+            self.oda_durum_islem(row)
+            return
         item = self.tablo.item(row, 3)  # Ad Soyad sütunundan rez_id oku
         if item is None:
             return
@@ -237,6 +243,34 @@ class OdaDurumuTab(QWidget):
         dialog.exec()
         if dialog.kaydedildi:
             self.yenile()
+
+    def oda_durum_islem(self, row):
+        """Oda Durumu sütununa çift tıklanınca, temizlikte/arızalı boş odaları
+        'Temiz' olarak işaretlemeyi sorar."""
+        item = self.tablo.item(row, 11)
+        if item is None:
+            return
+        oda_id = item.data(Qt.UserRole + 1)
+        durum = item.data(Qt.UserRole + 2)
+        if oda_id is None or durum not in ("temizlikte", "arizali"):
+            return
+        if durum == "temizlikte":
+            soru = "Oda temizlendi mi? 'Temiz' olarak işaretlensin mi?"
+        else:
+            soru = "Oda arızası giderildi mi? 'Temiz' olarak işaretlensin mi?"
+        cevap = QMessageBox.question(
+            self, "Oda Temizleme", soru, QMessageBox.Yes | QMessageBox.No
+        )
+        if cevap != QMessageBox.Yes:
+            return
+        try:
+            repository.oda_durum_ayarla(oda_id, "temiz")
+        except Exception as e:
+            QMessageBox.warning(self, "Yapılamadı", str(e))
+            return
+        self.yenile()
+        if self.yenile_callback:
+            self.yenile_callback()
 
     def odeme_isle(self, row, col):
         odeme_item = self.tablo.item(row, 10)
@@ -588,6 +622,7 @@ class YeniRezervasyonTab(QWidget):
 
         self.grid = TakvimGridWidget(interactive=True, gun_sayisi=14, kompakt=True)
         self.grid.secim_degisti.connect(self._aktif_secim_degisti)
+        self.grid.oda_durumu_degisti.connect(self.grid_odasi_temizlendi)
         sol_lay.addWidget(self.grid, stretch=1)
 
         kontrol = QWidget()
@@ -755,6 +790,12 @@ class YeniRezervasyonTab(QWidget):
             self.secim_kisi.setMaximum(10)
             self.secim_kapasite_label.setText("")
         self._tutar_ozetini_guncelle()
+
+    def grid_odasi_temizlendi(self):
+        """Takvimdeki bir oda 'Temizlikte/Arızalı' hücresinden temize çekilince
+        diğer ekranlar da (Oda Durumu, Check-in, Çıkış vb.) tazelensin."""
+        if self.yenile_callback:
+            self.yenile_callback()
 
     def _kalan_kisi_sayisi(self):
         """Toplam kişi belirtildiyse, henüz odaya konmamış kalan sayı. Belirtilmediyse 0."""
@@ -1216,6 +1257,7 @@ class RezervasyonYonetimiTab(QWidget):
 
         renk_bilgi = QLabel(
             "🔴 Kırmızı satır = Gelmedi (No-Show). İsme çift tık → tam detay. "
+            "‘Oda’ sütununa çift tık → içindeki temizlikte/arızalı odayı TEMİZ yap. "
             "Butonlar sağda: Oda Değiştir / İptal Et."
         )
         renk_bilgi.setWordWrap(False)
@@ -1371,12 +1413,65 @@ class RezervasyonYonetimiTab(QWidget):
         rez_id = item.data(Qt.UserRole)
         if rez_id is None:
             return
+        if col == 1 and self._odadaki_temizligi_sor(rez_id):
+            return
         dialog = RezervasyonDetayDialog(rez_id, self)
         dialog.exec()
         if dialog.kaydedildi:
             self.yenile()
             if self.yenile_callback:
                 self.yenile_callback()
+
+    def _odadaki_temizligi_sor(self, rez_id):
+        """Rezervasyonun 'Oda' sütununa çift tıklayınca, içindeki hâlâ
+        temizlikte/arızalı olan odaları temize çekmeyi teklif eder.
+        Temizlik bekleyen oda yoksa False döner (detay penceresi açılır)."""
+        bugun = date.today().isoformat()
+        odalar = [dict(r) for r in repository.rezervasyon_odalar_listele(rez_id)]
+        temizlenecek = []
+        for o in odalar:
+            if o.get("iptal"):
+                continue
+            durum = repository._odanin_efektif_durumu(o.get("durum"), o.get("ariza_bitis"), bugun)
+            if durum in ("temizlikte", "arizali"):
+                temizlenecek.append((o, durum))
+        if not temizlenecek:
+            return False
+
+        if len(temizlenecek) == 1:
+            secilen, durum = temizlenecek[0]
+        else:
+            durum_metni = {"temizlikte": "Temizlikte", "arizali": "Arızalı"}
+            secenekler = [f"{o['kat_adi']} - Oda {o['oda_no']} ({durum_metni[d]})"
+                          for o, d in temizlenecek]
+            secim, ok = QInputDialog.getItem(
+                self, "Oda Temizle", "Hangi oda temizlenecek?", secenekler, 0, False
+            )
+            if not ok:
+                return True
+            secilen = temizlenecek[secenekler.index(secim)][0]
+            durum = temizlenecek[secenekler.index(secim)][1]
+
+        if durum == "temizlikte":
+            soru = f"{secilen['kat_adi']} - Oda {secilen['oda_no']} şu an TEMİZLİKTE.\n\n" \
+                   "Oda temizlendi mi? 'Temiz' olarak işaretlensin mi?"
+        else:
+            soru = f"{secilen['kat_adi']} - Oda {secilen['oda_no']} şu an ARIZALI.\n\n" \
+                   "Arıza giderildi mi? Oda 'Temiz' olarak işaretlensin mi?"
+        cevap = QMessageBox.question(
+            self, "Oda Temizleme", soru, QMessageBox.Yes | QMessageBox.No
+        )
+        if cevap != QMessageBox.Yes:
+            return True
+        try:
+            repository.oda_durum_ayarla(secilen["oda_id"], "temiz")
+        except Exception as e:
+            QMessageBox.warning(self, "Yapılamadı", str(e))
+            return True
+        self.yenile()
+        if self.yenile_callback:
+            self.yenile_callback()
+        return True
 
     def iptal_et(self, rez_id):
         cevap = QMessageBox.question(
@@ -1927,7 +2022,7 @@ class CikisTab(QWidget):
         for r in rows:
             row_idx = self.tablo.rowCount()
             self.tablo.insertRow(row_idx)
-            borc = repository.odasi_odenmemis_tutar(r["id"], kesim_tarihi=tarih_str)
+            borc = self._satir_borcu(r["id"], r["giris_tarihi"], tarih_str)
             degerler = [
                 f"{r['kat_adi']} - {r['oda_no']}", r["ad_soyad"],
                 r["telefon"] or "", r["giris_tarihi"], str(r["gece_sayisi"]),
@@ -1956,7 +2051,7 @@ class CikisTab(QWidget):
             # Borç/gecikmiş de tablonun tepesindeki tarih seçiciyle tutarlı
             # olsun diye "bugün" değil, sekmede seçili tarih (tarih_str)
             # kullanılır (Çıkış Yap listesiyle aynı mantık).
-            borc = repository.odasi_odenmemis_tutar(r["id"], kesim_tarihi=tarih_str)
+            borc = self._satir_borcu(r["id"], r["giris_tarihi"], tarih_str)
             gecikmis = r["planli_cikis"] < tarih_str
             degerler = [
                 f"{r['kat_adi']} - {r['oda_no']}", r["ad_soyad"],
@@ -1980,21 +2075,96 @@ class CikisTab(QWidget):
             self.erken_tablo.setCellWidget(row_idx, 6, islem_widget)
         self.erken_ozet_label.setText(f"Erken çıkış adayı: {len(erken_rows)}")
 
+    def _odeme_sekli_sec(self):
+        from PySide6.QtWidgets import QInputDialog
+        secim, ok = QInputDialog.getItem(
+            self, "Ödeme Şekli", "Ödeme nasıl alındı?",
+            database.ODEME_SEKILLERI, 0, False
+        )
+        return secim, ok
+
+    def _satir_borcu(self, ro_id, giris_tarihi, kesim_tarihi):
+        """Listede gösterilecek borç: kesimden önceki ödenmemiş geceler + aynı
+        gün girip çıkan misafirin (giris == kesim) o günkü ödenmemiş gecesi
+        (normal erken çıkış mantığında bugünün gecesi sayılmaz, ama aynı gün
+        girip çıktığında o gece de ücrete giriyor)."""
+        borc = repository.odasi_odenmemis_tutar(ro_id, kesim_tarihi=kesim_tarihi)
+        if giris_tarihi == kesim_tarihi:
+            for o in repository.odasi_odemeler(ro_id):
+                if o["tarih"] == kesim_tarihi and not o["odendi"]:
+                    borc += o["tutar"]
+        return borc
+
     def _cikisi_uygula(self, ro_id, baslik, mesaj_on_ek, borc_kesim_tarihi):
+        ro = repository.rezervasyon_odasi_getir(ro_id)
+        odemeler = repository.odasi_odemeler(ro_id)
+        bugunku = next((o for o in odemeler if o["tarih"] == borc_kesim_tarihi), None)
+        ayni_gun = bool(ro) and (ro["giris_tarihi"] == borc_kesim_tarihi)
+
         borc = repository.odasi_odenmemis_tutar(ro_id, kesim_tarihi=borc_kesim_tarihi)
-        borc_metni = (f"\n\n⚠ Ödenmemiş borç: {borc:,}₺" if borc else "\n\nÖdenmemiş borcu yok.")
+        mesaj = mesaj_on_ek + " İşlem sonrası oda 'temizlikte' durumuna alınır."
+        if ayni_gun and bugunku is not None and not bugunku["odendi"]:
+            mesaj += (
+                f"\n\n⚠ Bu misafir BUGÜN girip BUGÜN çıkıyor; bugünkü gece ücreti "
+                f"({bugunku['tutar']:,}₺) HENÜZ ÖDENMEDİ."
+            )
+        elif ayni_gun and bugunku is not None and bugunku["odendi"]:
+            mesaj += (
+                f"\n\nℹ Bu misafir BUGÜN girip BUGÜN çıkıyor; bugünün gecesi ödendiği "
+                f"için iade edilmesi gerekir."
+            )
+        elif borc:
+            mesaj += f"\n\n⚠ Ödenmemiş borç: {borc:,}₺"
+        else:
+            mesaj += "\n\nÖdenmemiş borcu yok."
+
         cevap = QMessageBox.question(
-            self, baslik,
-            mesaj_on_ek + " İşlem sonrası oda 'temizlikte' durumuna alınır." + borc_metni,
-            QMessageBox.Yes | QMessageBox.No
+            self, baslik, mesaj, QMessageBox.Yes | QMessageBox.No
         )
         if cevap != QMessageBox.Yes:
             return
+
+        if ayni_gun and bugunku is not None:
+            if not bugunku["odendi"]:
+                tahsil = QMessageBox.question(
+                    self, "Giriş Günü Ücreti",
+                    f"Bugün girip bugün çıkan misafirin bugünkü gece ücreti "
+                    f"({bugunku['tutar']:,}₺) henüz ÖDENMEDİ.\n\n"
+                    "Tahsil edilsin mi?\n\n"
+                    "Evet = ödeme alınır ve kaydedilir.\nHayır = ücret borçtan düşülür, çıkış yapılır.",
+                    QMessageBox.Yes | QMessageBox.No,
+                )
+                if tahsil == QMessageBox.Yes:
+                    sekli, ok = self._odeme_sekli_sec()
+                    if not ok:
+                        return
+                    repository.odeme_guncelle(bugunku["id"], True, sekli)
+            else:
+                iade = QMessageBox.question(
+                    self, "Giriş Günü Ücreti",
+                    f"Bugün girip bugün çıkan misafir bugünkü geceyi önceden ÖDEDİ "
+                    f"({bugunku['tutar']:,}₺).\n\nİade edilmesi gerekiyor. İade yapıldı mı?\n\n"
+                    "Evet = bu gecenin ücreti iptal edilir (kayıt silinir).\n"
+                    "Hayır = ödeme kaydı korunur.",
+                    QMessageBox.Yes | QMessageBox.No,
+                )
+                if iade == QMessageBox.Yes:
+                    try:
+                        repository.odeme_sil(bugunku["id"])
+                    except Exception as e:
+                        QMessageBox.warning(self, "İade Yapılamadı", str(e))
+                        return
+
         try:
             dusen_odenmis = repository.odasi_cikis_yap(ro_id, borc_kesim_tarihi)
         except Exception as e:
             QMessageBox.warning(self, "Çıkış Yapılamadı", str(e))
             return
+        # Aynı gün girip çıkan misafirin bugünkü gecesi zaten yukarıdaki özel
+        # akışta karara bağlandı (tahsil / iade); genel 'önceden ödenmiş
+        # geceler' bilgisine düşmesin diye filtrelenir.
+        if ayni_gun and bugunku is not None:
+            dusen_odenmis = [t for t in dusen_odenmis if t != bugunku["tarih"]]
         if dusen_odenmis:
             QMessageBox.information(
                 self, "Önceden Ödenmiş Geceler",
@@ -2376,7 +2546,7 @@ class AnaPencere(QMainWindow):
             olusturan = self.aktif_kullanici["kullanici_adi"]
             loglama.set_aktif_kullanici(olusturan)
 
-        self.oda_durumu_tab = OdaDurumuTab()
+        self.oda_durumu_tab = OdaDurumuTab(yenile_callback=self._tumunu_yenile)
         self.gunluk_giris_tab = GunlukGirisTab()
         self.checkin_tab = CheckinTab(yenile_callback=self._tumunu_yenile)
         self.cikis_tab = CikisTab(yenile_callback=self._tumunu_yenile)

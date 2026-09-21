@@ -9,7 +9,7 @@ from datetime import datetime, timedelta, date
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QTableWidget,
-    QTableWidgetItem, QSpinBox, QHeaderView, QDateEdit, QAbstractItemView
+    QTableWidgetItem, QSpinBox, QHeaderView, QDateEdit, QAbstractItemView, QMessageBox
 )
 from PySide6.QtCore import Qt, QDate, Signal
 from PySide6.QtGui import QColor
@@ -39,6 +39,9 @@ def qdate_to_str(qd: QDate) -> str:
 class TakvimGridWidget(QWidget):
     # interaktif modda aktif seçim degistiginde bilgi vermek icin
     secim_degisti = Signal()
+    # temizlik/arıza giderilip oda 'temiz' yapildiginda haber verir (ust tablolari
+    # yenilemek isteyen cagiranlar baglanir)
+    oda_durumu_degisti = Signal()
 
     def __init__(self, interactive=False, gun_sayisi=14, kompakt=False, parent=None):
         super().__init__(parent)
@@ -403,12 +406,39 @@ class TakvimGridWidget(QWidget):
         gun = self.baslangic.addDays(col - self.SABIT_KOLON)
         gun_str = qdate_to_str(gun)
         kayit = self.doluluk.get((oda["id"], gun_str))
-        if kayit is None:
+        if kayit is not None:
+            dialog = RezervasyonDetayDialog(kayit["rez_id"], self)
+            dialog.exec()
+            if dialog.kaydedildi:
+                self.yenile()
             return
-        dialog = RezervasyonDetayDialog(kayit["rez_id"], self)
-        dialog.exec()
-        if dialog.kaydedildi:
-            self.yenile()
+        blok = self._hucre_blok_nedeni(oda, gun_str)
+        if blok in ("temizlikte", "arizali"):
+            self._odayi_temize_cek(oda, blok)
+
+    def _odayi_temize_cek(self, oda, blok):
+        """'Temizlikte' ya da 'Arızalı' hücresine çift tıklanınca temize çekmeyi sorar."""
+        if blok == "temizlikte":
+            soru = (f"Oda {oda['kat_adi']} - {oda['oda_no']} şu an TEMİZLİKTE.\n\n"
+                    "Oda temizlendi mi? 'Temiz' olarak işaretlensin mi?")
+        else:
+            soru = (f"Oda {oda['kat_adi']} - {oda['oda_no']} şu an ARIZALI.\n\n"
+                    "Arıza giderildi mi? Oda 'Temiz' olarak işaretlensin mi?")
+        cevap = QMessageBox.question(
+            self, "Oda Temizleme", soru, QMessageBox.Yes | QMessageBox.No
+        )
+        if cevap != QMessageBox.Yes:
+            return
+        try:
+            repository.oda_durum_ayarla(oda["id"], "temiz")
+        except Exception as e:
+            QMessageBox.warning(self, "Yapılamadı", str(e))
+            return
+        if self.interactive:
+            self.durum_label.setText(f"Oda {oda['oda_no']} temiz olarak işaretlendi.")
+            self.durum_label.setStyleSheet("color: #196f3d; font-style: italic;")
+        self.oda_durumu_degisti.emit()
+        self.yenile()
 
     def _aktif_secimi_yenile(self):
         if self.aktif_oda_id is not None:

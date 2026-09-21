@@ -481,7 +481,7 @@ def rezervasyon_odalar_listele(rez_id):
     conn = get_connection()
     try:
         rows = conn.execute("""
-            SELECT ro.*, o.oda_no, o.kat_adi, o.oda_tipi, o.kapasite, o.eski_no,
+            SELECT ro.*, o.oda_no, o.kat_adi, o.oda_tipi, o.kapasite, o.eski_no, o.durum, o.ariza_bitis,
                    r.id as rez_id, r.ad_soyad, r.telefon, r.tc_no, r.referans,
                    r.notlar, r.iptal, r.olusturan_kullanici
             FROM rezervasyon_odalar ro
@@ -880,6 +880,33 @@ def odeme_guncelle(odeme_id, odendi, odeme_sekli=None, odeme_notu=None):
             durum = "ödendi" if odendi else "ödendi değil"
             loglama.islem_yaz("odeme", f"{o['kat_adi']} Oda {o['oda_no']}, {o['tarih']} gecesi {o['tutar']} TL: {durum}. Sekli: {odeme_sekli or 'Yok'}")
         return o["rezervasyon_oda_id"] if o else None
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def odeme_sil(odeme_id):
+    """Bir gece ücreti kaydını tamamen siler — örn. aynı gün girip çıkan misafirin
+    ücreti iade edildiğinde o gece artık 'satış' ve borç hesabına girmez."""
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        o = cur.execute(
+            "SELECT od.*, o2.oda_no, o2.kat_adi FROM odemeler od "
+            "JOIN rezervasyon_odalar ro ON od.rezervasyon_oda_id = ro.id "
+            "JOIN odalar o2 ON ro.oda_id = o2.id WHERE od.id=?",
+            (odeme_id,),
+        ).fetchone()
+        if o is None:
+            return
+        cur.execute("DELETE FROM odemeler WHERE id=?", (odeme_id,))
+        conn.commit()
+        loglama.islem_yaz(
+            "odeme",
+            f"{o['kat_adi']} Oda {o['oda_no']}, {o['tarih']} gecesi {o['tutar']} TL ödeme kaydı silindi (iade).",
+        )
     except Exception:
         conn.rollback()
         raise
