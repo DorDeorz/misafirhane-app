@@ -400,9 +400,17 @@ birkaç kez elle denendi ("bi sıkıntı yaşanmadı").
 **Sürüm/release**: `versiyon.py` → 1.0.4.4 + YENILIKLER; README güncellendi.
 `python guncelleme_olustur.py --tam` + Kurulum Aracı + Standalone derlemeleri
 CLAUDE.md madde 6'daki adımlarla üretildi; `Misafirhane_Kurulumu_1.0.4.4.exe`
-kullanıcının Masaüstü'ne kopyalandı. **GitHub Release AÇILMADI** (yalnızca
-kod push edildi + exe'ler yerel/masaüstünde bırakıldı) — kullanıcı ayrıca
-"Release oluştur ve yükle" demedikçe bir sonraki oturum da bunu varsaymasın.
+kullanıcının Masaüstü'ne kopyalandı. **DÜZELTME (21 Eylül 2026, ev
+masaüstünde):** bu oturumun kendi notu "GitHub Release AÇILMADI" diyordu, ama
+`gh release list` ile kontrol edildiğinde **Release GERÇEKTEN YAYINDA**
+olduğu görüldü — `v1.0.4.4` / "Misafirhane 1.0.4.4", published
+2026-09-20T22:29:01Z, `Latest` etiketli, 3 asset (`Misafirhane_1.0.4.4.exe`,
+`Misafirhane_Guncelleme_1.0.4.4.exe`, `Misafirhane_Kurulumu_1.0.4.4.exe`).
+Release oluşturulma zamanı push zamanıyla saniyesi saniyesine eşleşiyor; yani
+laptop oturumunda ya kullanıcı ya da o oturum release'i fiilen açmış, ama
+kendi dokümanına yanlış yazmış. **Ders:** release durumunu doğrularken bu
+dosyaya değil `gh release list --repo DorDeorz/misafirhane-app` çıktısına
+güven.
 
 ---
 
@@ -411,18 +419,21 @@ kod push edildi + exe'ler yerel/masaüstünde bırakıldı) — kullanıcı ayr�
 - Repo: `https://github.com/DorDeorz/misafirhane-app` — ana dal `main`,
   **public** (private değil). Push eden kimlik: `DorDeorz` (PAT, git credential
   manager'da).
-- Release'ler: **v1.0.1, v1.0.3, v1.0.4, v1.0.4.2**. Tag → commit:
+- Release'ler: **v1.0.1, v1.0.3, v1.0.4, v1.0.4.2, v1.0.4.4**. Tag → commit:
   - v1.0.4 → `44f7f75`
   - v1.0.4.2 → `424d927`
+  - v1.0.4.4 → `fd52c5d` (3 asset: Kurulum Aracı + Güncelleme + Standalone;
+    `Latest` etiketli, published 2026-09-20T22:29:01Z).
   - v1.0.1 / v1.0.3 → kendi sürüm commit'leri.
   - **1.0.4.3 için release YOK** (kullanıcı özellikle istemedi — sadece kod
     push edildi, `Misafirhane_Kurulumu_1.0.4.3.exe` vb. üretilmedi/yüklenmedi).
-  - **1.0.4.4 için de GitHub Release YOK** — exe'ler (Kurulum Aracı,
-    Güncelleme, Standalone) üretildi ve `Misafirhane_Kurulumu_1.0.4.4.exe`
-    kullanıcının Masaüstü'ne kopyalandı, ama bir GitHub Release AÇILMADI/
-    yüklenmedi (kullanıcı sadece "exe üret + masaüstüme koy" dedi, "release
-    oluştur" demedi). Bir sonraki oturum, kullanıcı ayrıca istemedikçe bunu
-    varsaymasın.
+    Bu hâlâ doğru — 1.0.4.3 hiç release edilmedi, sadece 1.0.4.4 edildi.
+  - **1.0.4.4 için GitHub Release VAR** (bkz. yukarı). Önceki bir not burada
+    "release yok" diyordu, bu 21 Eylül 2026'da `gh release list` ile
+    doğrulanıp düzeltildi — ayrıntı için madde 4'teki "1.0.4.4" bölümünün
+    sonundaki düzeltme notuna bakın. Bir sonraki sürüm için kullanıcı
+    açıkça istemedikçe release'in zaten var olduğunu varsayıp tekrar
+    oluşturmaya kalkma; önce `gh release list` ile kontrol et.
 - Eski release'lerden (`v1.0.1/v1.0.3/v1.0.4`) Inno `Misafirhane_Kurulum_*.exe`
   **silinmedi** (geçmiş sürümlerin tek kurulum yolu — dokunulmadı).
 - **Asla push edilmez:** `*.db` (gerçek/test verileri), `build/`, `dist/`,
@@ -486,25 +497,32 @@ kod push edildi + exe'ler yerel/masaüstünde bırakıldı) — kullanıcı ayr�
 
 ## 8. Mevcut durum + bilinen eksikler / öneriler
 
-- Git HEAD: `8767217` (main) + hemen ardından bir docs commit'i (bu dosya ve
-  DEVAM.md'yi günceller), çalışma ağacı temiz. En yeni sürüm: **1.0.4.3**
-  (release YOK, sadece kod push edildi — bkz. madde 5).
-- Bu `CLAUDE.md` dosyası daha önce (bu oturuma kadar) **git'e hiç
+- Git HEAD: `fd52c5d` (main), çalışma ağacı temiz. En yeni sürüm: **1.0.4.4**
+  — **GitHub Release VAR** (`v1.0.4.4`, `Latest`, 3 asset — bkz. madde 5).
+  Bu satır 21 Eylül 2026'da ev masaüstünde, laptop oturumunun push'unu
+  `git pull` ile alıp `gh release list` ile doğrulayan bir oturumda
+  güncellendi (önceki hâli hem eski commit'i hem de yanlış "release yok"
+  bilgisini taşıyordu — laptop oturumu madde 4/5'i güncellemiş ama bu
+  bölümü unutmuş, ders: bir sürüm eklerken madde 4, 5 VE 8'in hepsi
+  güncellenmeli).
+- Bu `CLAUDE.md` dosyası 1.0.4.3'e kadar (yani epeyce geç) **git'e hiç
   commit'lenmemişti** (yerelde vardı, push edilmemişti) — 1.0.4.3 docs
-  commit'iyle ilk kez repoya girdi. Yeni bir bilgisayarda `git clone`
-  yapılırsa bu dosya artık gelir.
+  commit'iyle ilk kez repoya girdi. Artık her `git clone`/`pull` ile gelir.
 - **Bilinen eksikler:**
   1. Kurulum Aracı ve standalone derleme adımları `guncelleme_olustur.py`'de
      değil (manuel komutlar, yukarıda 6. maddede). Öneri: betiğe A2 adımı
      (Kurulum Aracı + standalone) eklenip tek komutta tüm release üretmek.
-  2. Ev makinesinde `guncelleme_olustur.py` A+B (TAM paket) ve
-     `guncelle_araci/guncelle.py` sürüm kapısı değişiklikleri commit'siz
-     kaldı — bu repoya taşınmadı.
+  2. Ev makinesinde daha önce bilinen `guncelleme_olustur.py` A+B (TAM paket)
+     ve `guncelle_araci/guncelle.py` sürüm kapısı değişiklikleri hâlâ bu
+     repoya taşınmadı (laptop oturumu bunu ele almadı).
   3. KBS excel/rapor ve islem geçmişi üzerinde otomatik test kapsamı dar
      (sok testleri manuel/komut bazlı), ama artık `oda_degistir_kbs_test.py`
-     ile oda değiştirme + KBS zinciri repoya işlenmiş durumda.
-  4. 1.0.4.3 için henüz exe/kurulum paketi üretilmedi (kullanıcı istemedi).
-     Bir sonraki sürüm çıkarılırken 1.0.4.3'ün düzeltmeleri de pakete girer.
+     ile oda değiştirme + KBS zinciri repoya işlenmiş durumda. 1.0.4.4'te
+     yazılan smoke testler (iptal engeli/borç/erken-çıkış/aynı-gün-kilit/
+     Sil butonu) kalıcı repoya EKLENMEDİ (scratchpad'te kaldı) — istenirse
+     bunlar da `oda_degistir_kbs_test.py` gibi kalıcı hale getirilebilir.
+  4. 1.0.4.4 exe'leri (Kurulum Aracı/Güncelleme/Standalone) hem kullanıcının
+     Masaüstü'nde hem GitHub Release'inde mevcut; ekstra bir işlem gerekmiyor.
 
 ## 9. Çalışma kuralları (bu projede)
 
@@ -527,11 +545,16 @@ kod push edildi + exe'ler yerel/masaüstünde bırakıldı) — kullanıcı ayr�
 
 - Kurulum Aracı + standalone derlemeyi `guncelleme_olustur.py`'ye taşımak
   (tek komutla tam release üretimi).
-- Evdeki commit'siz değişiklikleri bu repoya aktarmak.
-- Bir sonraki sürüm(ler) için özellik/eksik önceliklendirmesi.
-- **Laptoptan devam ederken:** `git clone`/`git pull` sonrası bu dosyayı ve
-  `DEVAM.md`'yi oku (madde 4'teki "1.0.4.3" bölümü ve DEVAM.md'nin en üstü).
-  1.0.4.3 için henüz exe/release üretilmedi; istenirse 6. maddedeki adımlarla
-  üretilebilir. `misafirhane_deneme.db`/`misafirhane.db`/`kbs_takip.db`
-  gitignore'lu olduğu için laptopta YOKTUR — test için gerekiyorsa yeniden
-  oluşturulmalı ya da ev bilgisayarından elle taşınmalı.
+- Evdeki commit'siz değişiklikleri (`guncelleme_olustur.py` A+B TAM paket,
+  `guncelle.py` sürüm kapısı) bu repoya aktarmak — hâlâ bekliyor, laptop
+  oturumu da bunu ele almadı.
+- Bir sonraki sürüm(ler) için özellik/eksik önceliklendirmesi. **Not:**
+  kullanıcı büyük/modern bir arayüz yeniden tasarımını 1.0.4.4'te denedi ve
+  beğenmedi, geri aldırdı — tekrar önerilmemeli.
+- **Herhangi bir makineden devam ederken:** `git pull` sonrası bu dosyayı ve
+  `DEVAM.md`'yi oku (madde 4'teki en son sürüm bölümü ve DEVAM.md'nin en
+  üstü) — ama release durumu için bu dosyaya değil `gh release list` çıktısına
+  güven (bkz. madde 8'deki not: laptop oturumu bu dosyaya yanlış "release
+  yok" yazmıştı). `misafirhane_deneme.db`/`misafirhane.db`/`kbs_takip.db`
+  gitignore'lu — yeni bir makinede YOKTUR, test için gerekiyorsa yeniden
+  oluşturulmalı ya da elle taşınmalı.
