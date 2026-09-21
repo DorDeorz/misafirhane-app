@@ -3,6 +3,82 @@
 Bu dosya, evdeki masaüstü bilgisayardaki opencode oturumunun kaldığı yerden devam
 edebilmesi için hazırlandı. İlk iş olarak okuyun.
 
+## DEVAM (21 Eylül 2026) — Fatura takibi + Nakit kaldırma, hata düzeltmeleri, derleme + Release (1.0.4.5)
+
+Bu bölüm **ev masaüstünde**, aynı Claude Code oturumunda (1.0.4.3'ü yapan
+oturumun devamı) yapıldı. Ayrıntı için `CLAUDE.md` madde 4 "1.0.4.5"
+bölümüne bakın — özet:
+
+### İstenen iş kuralı değişikliği
+Kullanıcı: ödeme her zaman Kredi Kartı ya da Havale/IBAN ile yapılıyor;
+"Fatura" bir ödeme yöntemi değil, ödemeden SONRA misafirin isteği üzerine
+ayrıca kesilen bir belge. Bunun üzerine:
+- `database.ODEME_SEKILLERI` → yalnızca `["Kredi Karti", "Havale/IBAN"]`
+  (Nakit VE Fatura kaldırıldı — ilk denemede sadece Nakit kaldırılmış,
+  kullanıcı "Fatura da bir ödeme yöntemi değil" diye düzeltti).
+- Yeni, ödeme yönteminden bağımsız fatura takibi: `rezervasyon_odalar`'a
+  `fatura_istiyor`/`fatura_alindi` kolonları (otomatik migrasyon). Check-in'de
+  "Fatura İstiyor" işaretlenir; Oda Durumu'nda ve rezervasyon detayında
+  "Fatura alınmalı/alındı" gösterilir; ödeme alınırken sorulur; detayda tek
+  tıkla işaretlenebilir.
+
+### Push öncesi "baştan aşağı bak" turu (kullanıcı istedi)
+Kullanıcı commit/push'tan önce projeyi yeniden gözden geçirmemi istedi. 2
+paralel ajanla hem yeni fatura özelliğini hem de **1.0.4.4'ün (laptop
+oturumu) daha önce hiç incelenmemiş kodunu** taradım. İki gerçek hata
+bulundu ve düzeltildi:
+1. **Kendi hatam:** `oda_degistir`'in kalış-ortası bölme INSERT'i yeni
+   fatura kolonlarını kopyalamıyordu (1.0.4.3'teki yabancı-misafir-alanı
+   hatasının aynısı, bu kez kendi yeni kolonlarımda).
+2. **Laptop oturumunun hatası:** `CikisTab._cikisi_uygula` çıkışı her zaman
+   BUGÜN olarak kaydediyordu (seçili tarihi yalnızca borç önizlemesinde
+   kullanıyordu) — geçmiş bir günün çıkışını işlerken hem yanlış tarih
+   kaydediliyor hem de aradaki günlerin meşru, faturalanmamış tutarları
+   sessizce siliniyordu.
+
+Kullanıcı ayrıca 3 küçük ek sorun sordu/buldurdu, hepsi düzeltildi: çıkış
+yapmış bir odada tarih/gece/oda değiştirme artık hem UI hem repository
+katmanında engelleniyor; "Erken Çıkışlar" borç/gecikmiş göstergesi artık
+sekmedeki tarihi kullanıyor; telefon doğrulama ülke kodsuz 10 haneli
+numaraları kabul ediyor. Ayrıca kullanıcı bir soru sordu (kod değişikliği
+gerektirmedi): çıkış sonrası, çıkıştan ÖNCEKİ günler takvimde siliniyor mu?
+Hayır, `doluluk_haritasi` yalnızca `cikis_tarihi`'nden sonraki geceleri
+atlıyor — geçmiş kayıt korunuyor.
+
+### Derleme + Release (kullanıcı özellikle istedi)
+`versiyon.py` → 1.0.4.5. Bu makinede ilk kez `python guncelleme_olustur.py
+--tam` + Kurulum Aracı + Standalone derlemeleri CLAUDE.md madde 6'daki
+adımlarla üretildi (PyInstaller 6.20.0, Inno Setup 6 kuruluymuş —
+`%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe`). Üç exe de açılıp
+(pencere göründü) kapatılarak duman testinden geçirildi.
+**GitHub Release `v1.0.4.5` gerçekten `gh release create` ile açıldı**, 3
+asset yüklendi (`Misafirhane_Kurulumu_1.0.4.5.exe`,
+`Misafirhane_Guncelleme_1.0.4.5.exe`, `Misafirhane_1.0.4.5.exe`) —
+`gh release view v1.0.4.5` ile doğrulandı.
+
+**Bilinmesi gereken kısıt:** bu makinenin `dagitim/son_manifest.json`'ı bu
+build'e kadar 1.0.4.2'den kalmaydı (1.0.4.3 bu makinede hiç derlenmedi,
+1.0.4.4 laptopta derlendi ve o dagitim/ buraya senkronlanmadı — gitignore'lu).
+`Misafirhane_Guncelleme_1.0.4.5.exe` bu yüzden "1.0.4.2 → 1.0.4.5" farkı
+olarak üretildi. Kurulu sürüm gerçekten 1.0.4.2 ise sorunsuz çalışır; başka
+bir sürümse, 1.0.4.3'te eklenen `onceki_surum` kontrolü bunu güvenle
+reddeder (veri kaybı yok), kullanıcı Kurulum Aracı'ndaki "Tamir Et"i
+kullanmalı. Bu build sonunda `dagitim/son_manifest.json` artık 1.0.4.5'i
+yansıtıyor (doğrulandı) — bir SONRAKİ güncelleme exe'si bu sorunu
+yaşamayacak, baseline artık güncel.
+
+### Commit'ler
+- `f45882b` — fonksiyonel değişiklikler (fatura/nakit + tüm hata
+  düzeltmeleri + `versiyon.py` 1.0.4.5 + `README.md`).
+- Bu commit'in hemen ardından bir docs commit'i — `CLAUDE.md`/`DEVAM.md`.
+
+### Test
+`py_compile` tüm değişen dosyalarda; `kbs_test.py`, `oda_degistir_kbs_test.py`
+(repo) geçti; yeni scratchpad testleri yazıldı (fatura/nakit akışı uçtan uca,
+çıkış-sonrası düzenleme engeli, telefon doğrulama vakaları) — hepsi geçti;
+`buton_test.py`/`coklu_test.py` (Temp\opencode) birden fazla kez tekrar
+çalıştırıldı, hepsi geçti.
+
 ## DEVAM (21 Eylül 2026) — laptop oturumu: hata düzeltmeleri + Erken Çıkış (1.0.4.4, GitHub Release VAR)
 
 **DÜZELTME (21 Eylül 2026, ev masaüstünde):** bu bölümün aşağıdaki son

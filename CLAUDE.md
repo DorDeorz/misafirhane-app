@@ -412,6 +412,83 @@ kendi dokümanına yanlış yazmış. **Ders:** release durumunu doğrularken bu
 dosyaya değil `gh release list --repo DorDeorz/misafirhane-app` çıktısına
 güven.
 
+### 1.0.4.5 (commit `f45882b`, ev masaüstünde Claude Code ile yapıldı, push
+edildi — **Release v1.0.4.5 GERÇEKTEN AÇILDI ve 3 exe yüklendi**)
+
+Kullanıcı önce iş kuralı değişikliği istedi: **"Fatura" bir ödeme yöntemi
+değil** — ödeme her zaman Kredi Kartı ya da Havale/IBAN ile yapılıyor,
+misafir isterse ayrıca fatura kesiliyor (ödemeden SONRA, misafirin isteği
+üzerine). Bunun üzerine:
+
+- **Nakit kaldırıldı, Fatura ödeme yöntemi listesinden çıkarıldı:**
+  `database.ODEME_SEKILLERI` artık yalnızca `["Kredi Karti", "Havale/IBAN"]`.
+- **Yeni fatura takibi (ödeme yönteminden bağımsız):** `rezervasyon_odalar`'a
+  `fatura_istiyor`/`fatura_alindi` kolonları eklendi (eski DB'ler için
+  otomatik migrasyon, `onceki_ro_id` ile aynı desen). Check-in'de "🧾 Misafir
+  fatura istiyor" işaretlenebiliyor (`detay_dialog.py` `CheckinDialog`); Oda
+  Durumu'nun ödeme hücresinde ve rezervasyon detayındaki oda tablosunda
+  "Fatura alınmalı/alındı" gösteriliyor; ödeme "ödendi" işaretlenirken (oda
+  fatura istiyorsa ve henüz verilmediyse) "Fatura da verildi mi?" diye
+  ayrıca soruluyor (`main.py` `OdaDurumuTab.odeme_isle`); rezervasyon
+  detayındaki aksiyon çubuğunda tek tıkla "🧾 Fatura Alındı" işaretlenebiliyor
+  (`repository.fatura_durumu_guncelle`).
+- **Kendi hatam, kendim buldum ve düzelttim:** oda_degistir'in kalış-ortası
+  bölme INSERT'i yeni fatura kolonlarını kopyalamıyordu — tam olarak daha
+  önce (1.0.4.3'te) yabancı misafir KBS alanlarında yaptığım hatanın aynısı,
+  bu kez kendi yeni kolonlarımda tekrarlamışım. Kullanıcı "push'tan önce
+  tekrar baştan aşağı bak" deyince 2 paralel ajanla hem bu yeni özelliği hem
+  de 1.0.4.4'ün (laptop) hiç incelenmemiş kodunu taradım; ajanlardan biri bu
+  hatayı buldu, `oda_degistir`'in INSERT'ine `fatura_istiyor, fatura_alindi`
+  eklenip test edilerek düzeltildi.
+- **Laptop oturumunun (1.0.4.4) daha önce hiç incelenmemiş kodunda bulunan
+  gerçek hata:** `main.py` `CikisTab._cikisi_uygula`, çıkış tarihini yalnızca
+  borç ÖNİZLEMESİ için kullanıyordu; gerçek `repository.odasi_cikis_yap(ro_id)`
+  çağrısı hiç tarih almadan yapılıyordu, yani her zaman BUGÜNÜ yazıyordu.
+  Sonuç: Çıkış sekmesinde geçmiş bir güne gidip o günün çıkışını (unutulmuş
+  bir çıkışı) işlemeye çalışırsan, sistem çıkışı bugün olmuş gibi kaydediyor
+  VE bugünden itibaren "ödenmemiş gece" kayıtlarını (aslında meşru,
+  faturalanmamış tutarlar) sessizce siliyordu. Düzeltildi: artık sekmede
+  seçili tarih gerçekten kullanılıyor; aynı yerde `except ValueError` da
+  `except Exception`'a genişletildi (kod tabanının geri kalanıyla tutarlı).
+- **Kullanıcının ek istekleriyle bulunan/düzeltilen 3 küçük sorun:**
+  (1) çıkış yapmış bir oda için Gece +1/-1, Tarih/Gece, Oda Değiştir hem
+  arayüzde (`detay_dialog.py` `_oda_secim_degisti`) hem repository
+  katmanında (`rezervasyon_odasi_tarih_degistir`, `oda_degistir` artık
+  `cikis_tarihi` doluysa `ValueError` fırlatıyor — savunma iki katmanda da)
+  engellendi; (2) "Erken Çıkışlar" listesindeki borç/gecikmiş göstergesi
+  "bugün" yerine sekmede seçili tarihi kullanacak şekilde düzeltildi;
+  (3) telefon doğrulama artık ülke kodu/başında 0 olmadan girilen 10 haneli
+  numaraları da (`532 123 45 67` gibi) kabul ediyor.
+- **Kullanıcının sorduğu (kod değişikliği gerektirmeyen) bir soru:** oda
+  çıkış yaptıktan sonra, çıkıştan ÖNCEKİ günler takvim/tablo görünümünde
+  siliniyor mu? Hayır — `repository.doluluk_haritasi` yalnızca
+  `gun >= cikis_tarihi` olan geceleri atlıyor, çıkıştan önceki geceler
+  olduğu gibi kalıyor (davranış doğrulandı, kod değiştirilmedi).
+- **Derleme + Release:** `versiyon.py` → 1.0.4.5 + YENILIKLER; README
+  güncellendi. `python guncelleme_olustur.py --tam` + Kurulum Aracı +
+  Standalone derlemeleri madde 6'daki adımlarla üretildi (PyInstaller
+  6.20.0, Inno Setup 6 — `%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe`).
+  Üç exe de kısaca açılıp (login/kurulum penceresi göründü) kapatılarak
+  duman testinden geçirildi. **GitHub Release `v1.0.4.5` GERÇEKTEN
+  oluşturuldu** (`gh release create`, 3 asset: Kurulumu/Guncelleme/
+  standalone) — bkz. madde 5.
+  **ÖNEMLİ KISIT:** bu makinedeki `dagitim/son_manifest.json` (Güncelleme
+  exe'sinin fark/baseline referansı) hâlâ **1.0.4.2**'den kalma — 1.0.4.3 bu
+  makinede hiç derlenmedi, 1.0.4.4 laptopta derlendi (o dagitim/ buraya hiç
+  senkronlanmadı, gitignore'lu). Yani `Misafirhane_Guncelleme_1.0.4.5.exe`
+  "1.0.4.2 → 1.0.4.5" farkı olarak üretildi (`guncelle.json`
+  `onceki_surum: "1.0.4.2"`). Kurulu sürüm gerçekten 1.0.4.2 ise sorunsuz
+  çalışır; 1.0.4.4 (ya da başka bir sürüm) kuruluysa, 1.0.4.3'te eklenen
+  `onceki_surum` kontrolü bunu GÜVENLİ şekilde reddedip kullanıcıyı Kurulum
+  Aracı'ndaki "Tamir Et"e yönlendirir (veri kaybı riski yok, sadece
+  Güncelleme exe'si o kurulumda işe yaramaz) — sonraki bir oturum, hangi
+  sürüm kuruluysa ona göre ya "Tamir Et" önersin ya da önce o sürümün gerçek
+  dist/Misafirhane çıktısından yeni bir baseline manifest üretsin.
+- Test: `py_compile` tüm dosyalarda; `kbs_test.py`, `oda_degistir_kbs_test.py`
+  (repo), ayrıca yeni scratchpad testleri (fatura/nakit akışı, çıkış-sonrası
+  düzenleme engeli, telefon doğrulama vakaları) yazılıp geçti; `buton_test.py`,
+  `coklu_test.py` (Temp\opencode) tekrar tekrar çalıştırıldı, hepsi geçti.
+
 ---
 
 ## 5. GitHub yapısı ve kuralları
@@ -419,11 +496,15 @@ güven.
 - Repo: `https://github.com/DorDeorz/misafirhane-app` — ana dal `main`,
   **public** (private değil). Push eden kimlik: `DorDeorz` (PAT, git credential
   manager'da).
-- Release'ler: **v1.0.1, v1.0.3, v1.0.4, v1.0.4.2, v1.0.4.4**. Tag → commit:
+- Release'ler: **v1.0.1, v1.0.3, v1.0.4, v1.0.4.2, v1.0.4.4, v1.0.4.5**.
+  Tag → commit:
   - v1.0.4 → `44f7f75`
   - v1.0.4.2 → `424d927`
   - v1.0.4.4 → `fd52c5d` (3 asset: Kurulum Aracı + Güncelleme + Standalone;
     `Latest` etiketli, published 2026-09-20T22:29:01Z).
+  - v1.0.4.5 → `f45882b` (3 asset: Kurulum Aracı + Güncelleme + Standalone;
+    bu makinede (ev masaüstü) derlendi ve `gh release create` ile açıldı,
+    `Latest` etiketli).
   - v1.0.1 / v1.0.3 → kendi sürüm commit'leri.
   - **1.0.4.3 için release YOK** (kullanıcı özellikle istemedi — sadece kod
     push edildi, `Misafirhane_Kurulumu_1.0.4.3.exe` vb. üretilmedi/yüklenmedi).
@@ -497,14 +578,13 @@ güven.
 
 ## 8. Mevcut durum + bilinen eksikler / öneriler
 
-- Git HEAD: `fd52c5d` (main), çalışma ağacı temiz. En yeni sürüm: **1.0.4.4**
-  — **GitHub Release VAR** (`v1.0.4.4`, `Latest`, 3 asset — bkz. madde 5).
-  Bu satır 21 Eylül 2026'da ev masaüstünde, laptop oturumunun push'unu
-  `git pull` ile alıp `gh release list` ile doğrulayan bir oturumda
-  güncellendi (önceki hâli hem eski commit'i hem de yanlış "release yok"
-  bilgisini taşıyordu — laptop oturumu madde 4/5'i güncellemiş ama bu
-  bölümü unutmuş, ders: bir sürüm eklerken madde 4, 5 VE 8'in hepsi
-  güncellenmeli).
+- Git HEAD: `f45882b` (main) + hemen ardından bir docs commit'i (bu dosya ve
+  DEVAM.md'yi günceller), çalışma ağacı temiz. En yeni sürüm: **1.0.4.5**
+  — **GitHub Release VAR** (`v1.0.4.5`, `Latest`, 3 asset — bkz. madde 5),
+  bu sefer gerçekten bu oturumda `gh release create` ile açıldı (önceki
+  1.0.4.4 release'i gibi belirsizlik yok). Ders (tekrar): bir sürüm
+  eklerken madde 4, 5 VE 8'in hepsi güncellenmeli — bu oturum bu üçünü de
+  güncelledi.
 - Bu `CLAUDE.md` dosyası 1.0.4.3'e kadar (yani epeyce geç) **git'e hiç
   commit'lenmemişti** (yerelde vardı, push edilmemişti) — 1.0.4.3 docs
   commit'iyle ilk kez repoya girdi. Artık her `git clone`/`pull` ile gelir.
@@ -521,8 +601,18 @@ güven.
      yazılan smoke testler (iptal engeli/borç/erken-çıkış/aynı-gün-kilit/
      Sil butonu) kalıcı repoya EKLENMEDİ (scratchpad'te kaldı) — istenirse
      bunlar da `oda_degistir_kbs_test.py` gibi kalıcı hale getirilebilir.
-  4. 1.0.4.4 exe'leri (Kurulum Aracı/Güncelleme/Standalone) hem kullanıcının
-     Masaüstü'nde hem GitHub Release'inde mevcut; ekstra bir işlem gerekmiyor.
+  4. 1.0.4.5 exe'leri (`dist/Misafirhane_Kurulumu_1.0.4.5.exe`,
+     `dagitim/Misafirhane_Guncelleme_1.0.4.5.exe`,
+     `dist/Misafirhane_1.0.4.5.exe`) yerelde (bu makinede) ve GitHub
+     Release'inde mevcut; kullanıcının Masaüstü'ne bu sefer kopyalanmadı
+     (istenmedi) — istenirse kopyalanabilir.
+  5. **Güncelleme exe'si baseline kısıtı:** `Misafirhane_Guncelleme_1.0.4.5.exe`
+     bu makinedeki eski (1.0.4.2) `dagitim/son_manifest.json` baseline'ına
+     göre üretildi — bkz. madde 4 "1.0.4.5" bölümündeki "ÖNEMLİ KISIT" notu.
+     Kurulu gerçek sürüm 1.0.4.2 değilse bu exe kendini güvenle reddeder
+     (veri kaybı yok), kullanıcı "Tamir Et" kullanmalı. Bir sonraki
+     derlemede bu makinenin `dagitim/son_manifest.json`'ı güncel olacağından
+     (bu build onu tazeledi) aynı sorun tekrar YAŞANMAZ.
 
 ## 9. Çalışma kuralları (bu projede)
 
