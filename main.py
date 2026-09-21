@@ -1799,8 +1799,9 @@ class OdaYonetimiTab(QWidget):
 # AYRI PENCERE: TAKVİM GÖRÜNÜMÜ (1.jpeg tarzı, salt-okunur genel bakış)
 # ============================================================
 class TakvimPenceresi(QMainWindow):
-    def __init__(self):
+    def __init__(self, yenile_callback=None):
         super().__init__()
+        self.yenile_callback = yenile_callback
         self.setWindowTitle("Takvim Görünümü - Tüm Odalar")
         self.resize(1300, 700)
 
@@ -1808,7 +1809,8 @@ class TakvimPenceresi(QMainWindow):
         layout = QVBoxLayout(merkez)
 
         bilgi = QLabel(
-            "Bu pencere tüm odaların önümüzdeki günlerdeki doluluğunu gösterir (salt okunur). "
+            "Bu pencere tüm odaların önümüzdeki günlerdeki doluluğunu gösterir. "
+            "'Temizlikte'/'Arızalı' bir odaya çift tıklayarak temiz olarak işaretleyebilirsin. "
             "Rezervasyon eklemek için ana penceredeki 'Yeni Rezervasyon' sekmesini kullan."
         )
         bilgi.setWordWrap(True)
@@ -1816,9 +1818,15 @@ class TakvimPenceresi(QMainWindow):
         layout.addWidget(bilgi)
 
         self.grid = TakvimGridWidget(interactive=False, gun_sayisi=16)
+        self.grid.oda_durumu_degisti.connect(self._oda_durumu_degisti)
         layout.addWidget(self.grid)
 
         self.setCentralWidget(merkez)
+
+    def _oda_durumu_degisti(self):
+        self.yenile()
+        if self.yenile_callback:
+            self.yenile_callback()
 
     def yenile(self):
         self.grid.yenile()
@@ -2578,7 +2586,9 @@ class AnaPencere(QMainWindow):
 
     def takvim_penceresini_ac(self):
         if self.takvim_penceresi is None:
-            self.takvim_penceresi = TakvimPenceresi()
+            self.takvim_penceresi = TakvimPenceresi(
+                yenile_callback=self._tumunu_yenile
+            )
         self.takvim_penceresi.yenile()
         self.takvim_penceresi.show()
         self.takvim_penceresi.raise_()

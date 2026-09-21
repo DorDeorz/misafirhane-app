@@ -5,7 +5,7 @@
 Her sürümde SURUM arttirilir; guncelleme aracı ve kurulum paketi bu değeri kullanır."""
 
 UYGULAMA_ADI = "Misafirhane Rezervasyon"
-SURUM = "1.0.4.5"
+SURUM = "1.0.4.6"
 
 YENILIKLER = {
     "1.0.0": "İlk yayın sürümü. Rezervasyon, oda durumu, takvim, rapor ve yedekleme.",
@@ -115,6 +115,20 @@ YENILIKLER = {
                 "gösterimi 'bugün' yerine sekmede seçili tarihi kullanıyor; "
                 "telefon doğrulama artık ülke kodu/başında 0 olmadan girilen "
                 "10 haneli numaraları da kabul ediyor.",
+    "1.0.4.6": "Yeni: 'Temizlikte'/'Arızalı' odalar artık çift tıklamayla temize "
+                "çekilebiliyor — Oda Durumu sekmesindeki durum kolonuna, Yeni "
+                "Rezervasyon takviminin temizlikte/arızalı bloğuna ve Rezervasyon "
+                "Yönetimi'ndeki 'Oda' sütununa çift tık 'Oda temizlendi mi?' diye "
+                "sorar, evetse odayı temiz durumuna alır (arızalı ise arıza "
+                "bitişini de sıfırlar). Aynı gün girip aynı gün çıkan misafirin "
+                "hesabı düzeltildi: normal erken çıkışta bugünün gecesi "
+                "sayılmaz, ancak aynı gün giriş+çıkışta bugünkü gece de ücrete "
+                "girer — ödenmemişse 'Tahsil edilsin mi?', ödenmişse 'İade "
+                "yapıldı mı?' diye sorulur; iade edilirse o gece kaydı silinir. "
+                "Çıkış listelerindeki borç sütunu da bu aynı-gün gecesini "
+                "gösterir. Düzeltme: Rezervasyon Yönetimi'ndeki temizlik "
+                "kontrolünde okunamayan satır verisi (sqlite3.Row.get) "
+                "dict'e çevrilerek giderildi.",
 }
 
 
