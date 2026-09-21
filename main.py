@@ -48,8 +48,9 @@ def tabloyu_kompakt_yap(tablo, satir_yuksekligi=30):
 
 
 def _telefon_gecerli_mi(metin):
-    """Telefon numarasi gecerli mi? Sadece rakami tutup 9-12 hane olup
-    olmadigina bakar (cep +90'li veya sabit dahil)."""
+    """Telefon numarasi gecerli mi? Sadece rakami tutup ulusal (0xxx...) 10/11
+    haneli bicime indirger, sonra kontrol eder (+90'li, ulke kodu/basina 0
+    olmadan 10 haneli girilmis (532 123 45 67 gibi) veya sabit dahil)."""
     rakamlar = "".join(c for c in metin if c.isdigit())
     if not rakamlar:
         return False
@@ -58,6 +59,9 @@ def _telefon_gecerli_mi(metin):
     if len(rakamlar) == 12 and rakamlar.startswith("90"):
         # +90 5xx xxx xx xx -> ulusal biçimde basina 0 eklenir (05xx xxx xx xx)
         rakamlar = "0" + rakamlar[2:]
+    elif len(rakamlar) == 10 and not rakamlar.startswith("0"):
+        # 5xx xxx xx xx (basina 0 olmadan girilmis) -> 0 eklenir
+        rakamlar = "0" + rakamlar
     return rakamlar.startswith("0") and len(rakamlar) in (10, 11)
 
 
@@ -191,6 +195,9 @@ class OdaDurumuTab(QWidget):
                 else:
                     item = QTableWidgetItem("✗ ÖDENMEDİ")
                     tema.renklendir(item, "#f7c5c5")
+                if r["fatura_istiyor"]:
+                    fatura_metni = " · 🧾 Fatura alındı" if r["fatura_alindi"] else " · 🧾 Fatura alınmalı"
+                    item.setText(item.text() + fatura_metni)
                 item.setData(Qt.UserRole, r["odeme_id"])
                 item.setData(Qt.UserRole + 1, bool(r["odendi"]))
                 self.tablo.setItem(row_idx, odeme_col, item)
@@ -249,7 +256,22 @@ class OdaDurumuTab(QWidget):
                 return
             odeme_sekli = secim
 
-        repository.odeme_guncelle(odeme_id, yeni_durum, odeme_sekli)
+        ro_id = repository.odeme_guncelle(odeme_id, yeni_durum, odeme_sekli)
+
+        # Ödeme alınırken, oda check-in'de fatura istediyse ve fatura henüz
+        # verilmediyse, fatura da verildi mi diye sor (tek adımda ikisini de
+        # işaretlemek için).
+        if yeni_durum and ro_id is not None:
+            ro = repository.rezervasyon_odasi_getir(ro_id)
+            if ro and ro["fatura_istiyor"] and not ro["fatura_alindi"]:
+                cevap = QMessageBox.question(
+                    self, "Fatura",
+                    "Bu misafir check-in'de fatura istemişti. Fatura da verildi mi?",
+                    QMessageBox.Yes | QMessageBox.No,
+                )
+                if cevap == QMessageBox.Yes:
+                    repository.fatura_durumu_guncelle(ro_id, True)
+
         self.yenile()
 
     def _odeme_sekli_sec(self):
@@ -1927,13 +1949,15 @@ class CikisTab(QWidget):
         self.ozet_label.setText(f"Çıkış yapacak misafir: {len(rows)}")
 
         erken_rows = repository.erken_cikis_adaylari(tarih_str)
-        bugun = date.today().isoformat()
         self.erken_tablo.setRowCount(0)
         for r in erken_rows:
             row_idx = self.erken_tablo.rowCount()
             self.erken_tablo.insertRow(row_idx)
-            borc = repository.odasi_odenmemis_tutar(r["id"], kesim_tarihi=bugun)
-            gecikmis = r["planli_cikis"] < bugun
+            # Borç/gecikmiş de tablonun tepesindeki tarih seçiciyle tutarlı
+            # olsun diye "bugün" değil, sekmede seçili tarih (tarih_str)
+            # kullanılır (Çıkış Yap listesiyle aynı mantık).
+            borc = repository.odasi_odenmemis_tutar(r["id"], kesim_tarihi=tarih_str)
+            gecikmis = r["planli_cikis"] < tarih_str
             degerler = [
                 f"{r['kat_adi']} - {r['oda_no']}", r["ad_soyad"],
                 r["telefon"] or "", r["giris_tarihi"],
@@ -1967,8 +1991,8 @@ class CikisTab(QWidget):
         if cevap != QMessageBox.Yes:
             return
         try:
-            dusen_odenmis = repository.odasi_cikis_yap(ro_id)
-        except ValueError as e:
+            dusen_odenmis = repository.odasi_cikis_yap(ro_id, borc_kesim_tarihi)
+        except Exception as e:
             QMessageBox.warning(self, "Çıkış Yapılamadı", str(e))
             return
         if dusen_odenmis:

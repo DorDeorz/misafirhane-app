@@ -241,7 +241,7 @@ def main():
         repository.odasi_misafirleri_kaydet(ro1["id"], [("Ebru Demirtaş", "10000000011", "Uye", 600),
                                                        ("Cihan Demirtaş", "10000000022", "Sabit", 1300)])
         repository.odasi_checkin_yap(ro1["id"])
-        repository.odeme_guncelle(repository.odasi_odemeler(ro1["id"])[0]["id"], True, "Nakit")
+        repository.odeme_guncelle(repository.odasi_odemeler(ro1["id"])[0]["id"], True, "Kredi Karti")
         toplam_rez += 1
         print("  [BUGÜN GİRİŞ] Oda {0}: 2 kişi, KARIŞIK FİYAT, ödendi, İÇERİDE".format(o1["oda_no"]))
 

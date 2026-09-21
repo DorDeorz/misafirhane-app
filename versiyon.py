@@ -5,7 +5,7 @@
 Her sürümde SURUM arttirilir; guncelleme aracı ve kurulum paketi bu değeri kullanır."""
 
 UYGULAMA_ADI = "Misafirhane Rezervasyon"
-SURUM = "1.0.4.4"
+SURUM = "1.0.4.5"
 
 YENILIKLER = {
     "1.0.0": "İlk yayın sürümü. Rezervasyon, oda durumu, takvim, rapor ve yedekleme.",
@@ -97,6 +97,24 @@ YENILIKLER = {
                 "şifre uzunluğu kontrol ediliyor; oda değiştirmede aynı odaya "
                 "taşıma engellendi; check-in artık tek transaction'da "
                 "tamamlanıyor.",
+    "1.0.4.5": "Ödeme yöntemlerinden Nakit kaldırıldı (yalnızca Kredi Kartı / "
+                "Havale-IBAN kabul ediliyor); 'Fatura' artık bir ödeme yöntemi "
+                "değil. Yeni: check-in'de '🧾 Misafir fatura istiyor' seçeneği; "
+                "işaretlenirse Oda Durumu'ndaki ödeme hücresinde ve rezervasyon "
+                "detayındaki oda tablosunda 'Fatura alınmalı/alındı' gösterilir, "
+                "ödeme alınırken fatura verildi mi diye ayrıca sorulur; "
+                "detayda tek tıkla 'Fatura Alındı' işaretlenebilir. "
+                "Hata düzeltmeleri: 'Çıkış Yap' artık her zaman bugünü değil, "
+                "Çıkış sekmesinde seçili tarihi kaydediyordu (geriye dönük bir "
+                "çıkışı işlerken bugünün tarihiyle kaydedilip aradaki "
+                "günlerin faturalanmamış tutarları yanlışlıkla siliniyordu); "
+                "oda değiştirmede fatura isteği/durumu artık yeni odaya da "
+                "taşınıyor; çıkış yapmış bir oda için Gece +1/-1, Tarih/Gece ve "
+                "Oda Değiştir artık hem arayüzde hem veritabanı katmanında "
+                "engelleniyor; 'Erken Çıkışlar' listesindeki borç/gecikmiş "
+                "gösterimi 'bugün' yerine sekmede seçili tarihi kullanıyor; "
+                "telefon doğrulama artık ülke kodu/başında 0 olmadan girilen "
+                "10 haneli numaraları da kabul ediyor.",
 }
 
 

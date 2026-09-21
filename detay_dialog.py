@@ -62,6 +62,13 @@ def _ro_durum_metni(ro, rez_iptal=False):
     return "Bekleniyor"
 
 
+def _fatura_durum_metni(ro):
+    """Fatura istenmediyse boş; istendiyse alınıp alınmadığını gösterir."""
+    if not _satir_getir(ro, "fatura_istiyor", 0):
+        return ""
+    return "🧾 Alındı ✓" if _satir_getir(ro, "fatura_alindi", 0) else "🧾 Alınmalı"
+
+
 def _tarih_degistir_akisi(ebeveyn, ro, yeni_giris, yeni_gece):
     """Ortak akış: çakışan rezervasyon varsa gece azaltma öner + onay iste; ödenmiş
     geceler kapsam dışına düştüyse uyar. Başarılıysa True döner."""
@@ -404,14 +411,15 @@ class RezervasyonDetayDialog(QDialog):
         oda_lay.setSpacing(6)
 
         tablo = QTableWidget()
-        tablo.setColumnCount(8)
+        tablo.setColumnCount(9)
         tablo.setHorizontalHeaderLabels([
-            "Oda", "Giriş", "Gece", "Çıkış", "Kişi", "Fiyat Tipi", "Gecelik", "Durum"
+            "Oda", "Giriş", "Gece", "Çıkış", "Kişi", "Fiyat Tipi", "Gecelik", "Durum", "Fatura"
         ])
         hh = tablo.horizontalHeader()
         for k in range(7):
             hh.setSectionResizeMode(k, QHeaderView.ResizeToContents)
         hh.setSectionResizeMode(7, QHeaderView.Stretch)
+        hh.setSectionResizeMode(8, QHeaderView.ResizeToContents)
         tablo.verticalHeader().setVisible(False)
         tablo.verticalHeader().setDefaultSectionSize(34)
         tablo.setEditTriggers(QTableWidget.NoEditTriggers)
@@ -429,6 +437,7 @@ class RezervasyonDetayDialog(QDialog):
                 str(o["kisi_sayisi"]), fiyat_tipi_goster(o["fiyat_tipi"]),
                 f"{repository.odasi_gecelik_toplami(o):,}₺/gece",
                 _ro_durum_metni(o, r["iptal"]),
+                _fatura_durum_metni(o),
             ]
             for col, val in enumerate(degerler):
                 tablo.setItem(i, col, QTableWidgetItem(val))
@@ -459,12 +468,17 @@ class RezervasyonDetayDialog(QDialog):
         self.oda_cikis_btn = QPushButton("🚪 Çıkış Yap")
         self.oda_cikis_btn.setObjectName("birincil")
         self.oda_cikis_btn.clicked.connect(self._oda_cikis_tikla)
+        self.oda_fatura_btn = QPushButton("🧾 Fatura Alındı")
+        self.oda_fatura_btn.setToolTip("Misafir check-in'de fatura istediyse, fatura fiilen verilince işaretle.")
+        self.oda_fatura_btn.setCheckable(True)
+        self.oda_fatura_btn.clicked.connect(lambda checked: self._oda_fatura_tikla(checked))
 
         islem_satir.addWidget(self.oda_kisisel_btn)
         islem_satir.addWidget(self.oda_tarih_btn)
         islem_satir.addWidget(self.oda_gece_artir_btn)
         islem_satir.addWidget(self.oda_gece_azalt_btn)
         islem_satir.addWidget(self.oda_degistir_btn)
+        islem_satir.addWidget(self.oda_fatura_btn)
         islem_satir.addWidget(self.oda_cikis_btn)
         oda_lay.addLayout(islem_satir)
 
@@ -574,21 +588,34 @@ class RezervasyonDetayDialog(QDialog):
             self.oda_tarih_btn.setEnabled(False)
             self.oda_degistir_btn.setEnabled(False)
             self.oda_cikis_btn.setEnabled(False)
+            self.oda_fatura_btn.setEnabled(False)
+            self.oda_fatura_btn.setChecked(False)
             return
         if o["checkin_yapildi"]:
             self.oda_kisisel_btn.setText("👥 Misafirleri Düzenle")
         else:
             self.oda_kisisel_btn.setText("👥 Kişiler / Check-in")
         canli_mi = not iptal
+        # Oda zaten çıkış yapmışsa (cikis_tarihi dolu) tarih/gece/oda değiştirme
+        # anlamsızdır — açık kalırsa bu satır için yeniden ödeme kaydı (odemeler)
+        # üretilip kapanmış bir konaklamanın "beklenen gelir"ine dönüşebilirdi.
+        duzenlenebilir_mi = canli_mi and not o["cikis_tarihi"]
         self.oda_kisisel_btn.setEnabled(canli_mi)
-        self.oda_tarih_btn.setEnabled(canli_mi)
-        self.oda_degistir_btn.setEnabled(canli_mi)
-        self.oda_gece_artir_btn.setEnabled(canli_mi)
-        self.oda_gece_azalt_btn.setEnabled(canli_mi and (o["gece_sayisi"] or 1) > 1)
+        self.oda_tarih_btn.setEnabled(duzenlenebilir_mi)
+        self.oda_degistir_btn.setEnabled(duzenlenebilir_mi)
+        self.oda_gece_artir_btn.setEnabled(duzenlenebilir_mi)
+        self.oda_gece_azalt_btn.setEnabled(duzenlenebilir_mi and (o["gece_sayisi"] or 1) > 1)
         self.oda_cikis_btn.setEnabled(
             canli_mi and bool(o["checkin_yapildi"]) and not o["cikis_tarihi"])
+        fatura_isteniyor = bool(_satir_getir(o, "fatura_istiyor", 0))
+        self.oda_fatura_btn.setEnabled(canli_mi and fatura_isteniyor)
+        self.oda_fatura_btn.setChecked(bool(_satir_getir(o, "fatura_alindi", 0)))
+        self.oda_fatura_btn.setText(
+            "🧾 Fatura Alındı ✓" if self.oda_fatura_btn.isChecked() else
+            ("🧾 Fatura Alındı Olarak İşaretle" if fatura_isteniyor else "🧾 Fatura istenmedi"))
         self.secim_etiketi.setText(
-            f"Seçili: <b>{o['kat_adi']} - Oda {o['oda_no']}</b> · {_ro_durum_metni(o, iptal)}")
+            f"Seçili: <b>{o['kat_adi']} - Oda {o['oda_no']}</b> · {_ro_durum_metni(o, iptal)}"
+            + (f" · {_fatura_durum_metni(o)}" if fatura_isteniyor else ""))
         self.secim_etiketi.setStyleSheet("color: #777; font-size: 10px;")
 
     def _oda_kisisel_tikla(self):
@@ -610,6 +637,19 @@ class RezervasyonDetayDialog(QDialog):
         o = self._secili_oda()
         if o is not None:
             self._odada_cikis(o)
+
+    def _oda_fatura_tikla(self, checked):
+        o = self._secili_oda()
+        if o is None:
+            return
+        try:
+            repository.fatura_durumu_guncelle(o["id"], checked)
+        except ValueError as e:
+            QMessageBox.warning(self, "Fatura", str(e))
+            return
+        self.kaydedildi = True
+        # Pencereyi kapatmadan yenile (gece +1/-1 ile aynı desen).
+        self._yenile(secili_oda_id=o["id"])
 
     def _oda_gece_degistir(self, delta):
         o = self._secili_oda()
@@ -791,6 +831,14 @@ class CheckinDialog(QDialog):
         self.ekstra_yatak_check = QCheckBox("🛏️ Ekstra yatak var (kapasiteyi bu sefer için +1 artır)")
         self.ekstra_yatak_check.toggled.connect(self._ekstra_yatak_degisti)
         layout.addWidget(self.ekstra_yatak_check)
+
+        self.fatura_check = QCheckBox("🧾 Misafir fatura istiyor")
+        self.fatura_check.setChecked(bool(_satir_getir(r, "fatura_istiyor", 0)))
+        self.fatura_check.setToolTip(
+            "İşaretlenirse ödeme ekranlarında bu oda için 'Fatura alınmalı' "
+            "uyarısı gösterilir; ödeme alındığında fatura verildi mi diye sorulur."
+        )
+        layout.addWidget(self.fatura_check)
 
         misafir_kutu = QGroupBox(f"Odada Kalacak Kişiler (en fazla {self._efektif_kapasite()})")
         self.misafir_kutu = misafir_kutu
@@ -1060,7 +1108,8 @@ class CheckinDialog(QDialog):
                 misafir_listesi.append((ad, belge_no, tip, ucret))
 
         repository.odasi_misafirleri_kaydet_ve_checkin(
-            self.ro_id, misafir_listesi, ekstra_yatak=self.ekstra_yatak)
+            self.ro_id, misafir_listesi, ekstra_yatak=self.ekstra_yatak,
+            fatura_istiyor=self.fatura_check.isChecked())
 
         self.kaydedildi = True
         self.accept()

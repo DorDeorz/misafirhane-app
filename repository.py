@@ -678,10 +678,13 @@ def rezervasyonlar_yabanci_sayilari(rez_ids):
         conn.close()
 
 
-def _misafirleri_kaydet_cur(cur, ro_id, misafir_listesi, ekstra_yatak=False):
+def _misafirleri_kaydet_cur(cur, ro_id, misafir_listesi, ekstra_yatak=False, fatura_istiyor=None):
     """odasi_misafirleri_kaydet'in cursor alan iç sürümü: çağıranın kendi
     transaction'ı içinde çalışır (bkz. odasi_misafirleri_kaydet ve
-    odasi_misafirleri_kaydet_ve_checkin)."""
+    odasi_misafirleri_kaydet_ve_checkin).
+    fatura_istiyor=None ise dokunulmaz (mevcut değer korunur); True/False
+    verilirse oda satırının fatura_istiyor alanı güncellenir (check-in'de
+    misafirin fatura isteyip istemediği burada kaydedilir)."""
     ro = cur.execute(
         "SELECT ro.*, o.kapasite FROM rezervasyon_odalar ro "
         "JOIN odalar o ON o.id = ro.oda_id WHERE ro.id=?", (ro_id,)
@@ -728,9 +731,14 @@ def _misafirleri_kaydet_cur(cur, ro_id, misafir_listesi, ekstra_yatak=False):
             )
     yeni_kisi = max(len(misafir_listesi), 1)
     cur.execute("UPDATE rezervasyon_odalar SET kisi_sayisi=? WHERE id=?", (yeni_kisi, ro_id))
+    if fatura_istiyor is not None:
+        cur.execute(
+            "UPDATE rezervasyon_odalar SET fatura_istiyor=? WHERE id=?",
+            (1 if fatura_istiyor else 0, ro_id),
+        )
 
 
-def odasi_misafirleri_kaydet(ro_id, misafir_listesi, ekstra_yatak=False):
+def odasi_misafirleri_kaydet(ro_id, misafir_listesi, ekstra_yatak=False, fatura_istiyor=None):
     """misafir_listesi: [(ad_soyad, tc_no), ...]
     veya 4 elemanli gelsede kişi başı fiyat bilgisi de saklanır:
         [(ad_soyad, tc_no, fiyat_tipi, gecelik_ucret), ...]
@@ -743,7 +751,7 @@ def odasi_misafirleri_kaydet(ro_id, misafir_listesi, ekstra_yatak=False):
     conn = get_connection()
     try:
         cur = conn.cursor()
-        _misafirleri_kaydet_cur(cur, ro_id, misafir_listesi, ekstra_yatak)
+        _misafirleri_kaydet_cur(cur, ro_id, misafir_listesi, ekstra_yatak, fatura_istiyor)
         _odeme_tutarlarini_yeniden_hesapla(cur, ro_id)
         conn.commit()
         loglama.islem_yaz("misafir", f"Oda satırı #{ro_id} misafirleri kaydedildi ({len(misafir_listesi)} kişi).")
@@ -754,7 +762,7 @@ def odasi_misafirleri_kaydet(ro_id, misafir_listesi, ekstra_yatak=False):
         conn.close()
 
 
-def odasi_misafirleri_kaydet_ve_checkin(ro_id, misafir_listesi, ekstra_yatak=False):
+def odasi_misafirleri_kaydet_ve_checkin(ro_id, misafir_listesi, ekstra_yatak=False, fatura_istiyor=None):
     """odasi_misafirleri_kaydet + odasi_checkin_yap TEK transaction'da: aradaki bir
     kesintide 'misafirler kaydedildi ama checkin_yapildi hâlâ 0' gibi tutarsız
     bir ara durumda kalınmaz (önceden CheckinDialog.kaydet() bu ikisini ayrı ayrı
@@ -762,7 +770,7 @@ def odasi_misafirleri_kaydet_ve_checkin(ro_id, misafir_listesi, ekstra_yatak=Fal
     conn = get_connection()
     try:
         cur = conn.cursor()
-        _misafirleri_kaydet_cur(cur, ro_id, misafir_listesi, ekstra_yatak)
+        _misafirleri_kaydet_cur(cur, ro_id, misafir_listesi, ekstra_yatak, fatura_istiyor)
         cur.execute("UPDATE rezervasyon_odalar SET checkin_yapildi=1 WHERE id=?", (ro_id,))
         _odeme_tutarlarini_yeniden_hesapla(cur, ro_id)
         ro = cur.execute(
@@ -852,6 +860,9 @@ def odasi_odemeler(ro_id):
 
 
 def odeme_guncelle(odeme_id, odendi, odeme_sekli=None, odeme_notu=None):
+    """Döner: ödemenin ait olduğu oda satırının id'si (rezervasyon_oda_id),
+    bulunamazsa None (çağıran taraf fatura durumu gibi oda bazlı takipleri
+    bu id ile güncelleyebilir)."""
     conn = get_connection()
     try:
         cur = conn.cursor()
@@ -868,6 +879,33 @@ def odeme_guncelle(odeme_id, odendi, odeme_sekli=None, odeme_notu=None):
         if o:
             durum = "ödendi" if odendi else "ödendi değil"
             loglama.islem_yaz("odeme", f"{o['kat_adi']} Oda {o['oda_no']}, {o['tarih']} gecesi {o['tutar']} TL: {durum}. Sekli: {odeme_sekli or 'Yok'}")
+        return o["rezervasyon_oda_id"] if o else None
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def fatura_durumu_guncelle(ro_id, alindi):
+    """Oda satırının fatura_alindi bayrağını günceller (fatura_istiyor
+    check-in'de zaten işaretlenmiş olmalı, bkz. odasi_misafirleri_kaydet_ve_checkin)."""
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        ro = cur.execute(
+            "SELECT ro.*, o.oda_no, o.kat_adi FROM rezervasyon_odalar ro "
+            "JOIN odalar o ON ro.oda_id=o.id WHERE ro.id=?", (ro_id,)
+        ).fetchone()
+        if not ro:
+            raise ValueError("Oda satırı bulunamadı.")
+        cur.execute(
+            "UPDATE rezervasyon_odalar SET fatura_alindi=? WHERE id=?",
+            (1 if alindi else 0, ro_id),
+        )
+        conn.commit()
+        durum = "alındı" if alindi else "alınmadı (geri alındı)"
+        loglama.islem_yaz("fatura", f"{ro['kat_adi']} Oda {ro['oda_no']} (satır #{ro_id}): fatura {durum}.")
     except Exception:
         conn.rollback()
         raise
@@ -1115,7 +1153,7 @@ def gunun_oda_durumu(tarih_str):
                    o.durum as oda_durum, o.ariza_bitis,
                    ro.id as ro_id, r.id as rez_id, r.ad_soyad, r.tc_no, r.telefon,
                    ro.kisi_sayisi, ro.fiyat_tipi, ro.gecelik_ucret, ro.checkin_yapildi,
-                   ro.giris_tarihi, ro.gece_sayisi,
+                   ro.giris_tarihi, ro.gece_sayisi, ro.fatura_istiyor, ro.fatura_alindi,
                    od.id as odeme_id, od.tutar, od.odendi, od.odeme_sekli, od.odeme_notu,
                    CASE WHEN ro.id IS NOT NULL THEN
                        CAST(julianday(date(ro.giris_tarihi, '+' || ro.gece_sayisi || ' day')) - julianday(?) AS INTEGER)
@@ -1167,6 +1205,8 @@ def oda_degistir(ro_id, yeni_oda_id, degisim_tarihi):
         ).fetchone()
         if not ust:
             raise ValueError("Rezervasyon bulunamadı veya iptal edilmiş.")
+        if eski["cikis_tarihi"]:
+            raise ValueError("Bu oda zaten çıkış yapmış; oda değiştirilemez.")
 
         if yeni_oda_id == eski["oda_id"]:
             raise ValueError("Hedef oda, mevcut odayla aynı; oda değişikliği için farklı bir oda seçmelisin.")
@@ -1235,10 +1275,11 @@ def oda_degistir(ro_id, yeni_oda_id, degisim_tarihi):
         # üretmemek amacıyla kullanır (bkz. kbs.py kbs_bekleyenler).
         cur.execute("""
             INSERT INTO rezervasyon_odalar
-            (rezervasyon_id, oda_id, giris_tarihi, gece_sayisi, kisi_sayisi, fiyat_tipi, gecelik_ucret, checkin_yapildi, onceki_ro_id)
-            VALUES (?,?,?,?,?,?,?,?,?)
+            (rezervasyon_id, oda_id, giris_tarihi, gece_sayisi, kisi_sayisi, fiyat_tipi, gecelik_ucret, checkin_yapildi, onceki_ro_id, fatura_istiyor, fatura_alindi)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?)
         """, (eski["rezervasyon_id"], yeni_oda_id, degisim_tarihi, kalan_gece,
-              eski["kisi_sayisi"], eski["fiyat_tipi"], eski["gecelik_ucret"], eski["checkin_yapildi"], ro_id))
+              eski["kisi_sayisi"], eski["fiyat_tipi"], eski["gecelik_ucret"], eski["checkin_yapildi"], ro_id,
+              eski["fatura_istiyor"], eski["fatura_alindi"]))
         yeni_ro_id = cur.lastrowid
 
         # Misafirleri de tasi (KBS'nin yabancı misafir alanları dahil - aksi halde
@@ -1390,6 +1431,8 @@ def rezervasyon_odasi_tarih_degistir(ro_id, yeni_giris_tarihi, yeni_gece_sayisi)
         ).fetchone()
         if not ust:
             raise ValueError("Rezervasyon bulunamadı veya iptal edilmiş.")
+        if ro["cikis_tarihi"]:
+            raise ValueError("Bu oda zaten çıkış yapmış; tarih/gece değiştirilemez.")
 
         if yeni_giris_tarihi < bugun:
             if yeni_giris_tarihi != ro["giris_tarihi"]:

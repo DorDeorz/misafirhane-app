@@ -35,7 +35,12 @@ ODA_TIPLERI = ["Tek", "Double", "Aile", "Tek+Tek"]
 FIYAT_TIPLERI = ["Sabit", "Uye", "Ozel"]  # Sabit ilk sirada -> formlarda varsayilan secim
 FIYAT_UYE = 600      # KİŞİ BAŞI, gecelik (varsayilan; ayarlardan degistirilir)
 FIYAT_SABIT = 1300   # KİŞİ BAŞI, gecelik (varsayilan; ayarlardan degistirilir)
-ODEME_SEKILLERI = ["Nakit", "Kredi Karti", "Havale/IBAN", "Fatura"]
+# Nakit kabul edilmiyor: yalnızca kredi kartı / havale-IBAN. "Fatura" bir
+# ödeme YÖNTEMİ değildir (ödeme zaten bu ikisinden biriyle yapılır); fatura,
+# ödemeden SONRA misafirin isteği üzerine ayrıca kesilen bir belgedir — bu
+# yüzden burada değil, oda satırındaki fatura_istiyor/fatura_alindi
+# alanlarıyla ayrı takip edilir (bkz. repository.fatura_durumu_guncelle).
+ODEME_SEKILLERI = ["Kredi Karti", "Havale/IBAN"]
 
 # Oda durumlari (odalar.durum):
 #   temiz      -> normal, rezervasyona acik
@@ -112,6 +117,8 @@ def init_db():
                 gecelik_ucret INTEGER DEFAULT 1300,
                 checkin_yapildi INTEGER DEFAULT 0,
                 onceki_ro_id INTEGER,
+                fatura_istiyor INTEGER DEFAULT 0,
+                fatura_alindi INTEGER DEFAULT 0,
                 FOREIGN KEY (rezervasyon_id) REFERENCES rezervasyonlar(id),
                 FOREIGN KEY (oda_id) REFERENCES odalar(id),
                 FOREIGN KEY (onceki_ro_id) REFERENCES rezervasyon_odalar(id)
@@ -127,6 +134,13 @@ def init_db():
         _ro_kolonlari = [r[1] for r in cur.execute("PRAGMA table_info(rezervasyon_odalar)").fetchall()]
         if "onceki_ro_id" not in _ro_kolonlari:
             cur.execute("ALTER TABLE rezervasyon_odalar ADD COLUMN onceki_ro_id INTEGER")
+        # 1.0.4.5: check-in sırasında misafirin fatura isteyip istemediğini
+        # (fatura_istiyor) ve fatura'nın fiilen verilip verilmediğini
+        # (fatura_alindi) tutar.
+        if "fatura_istiyor" not in _ro_kolonlari:
+            cur.execute("ALTER TABLE rezervasyon_odalar ADD COLUMN fatura_istiyor INTEGER DEFAULT 0")
+        if "fatura_alindi" not in _ro_kolonlari:
+            cur.execute("ALTER TABLE rezervasyon_odalar ADD COLUMN fatura_alindi INTEGER DEFAULT 0")
 
         # Oda bazli check-in ile doldurulan kisi listesi (her misafirin fiyati).
         cur.execute("""
