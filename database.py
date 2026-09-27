@@ -187,6 +187,30 @@ def init_db():
             )
         """)
 
+        # 1.0.5: gün sonu kasa raporu için tahsilatın NE ZAMAN ve KİM tarafından
+        # yapıldığı. Eski kayıtlarda boş kalır (o ödemelerin tahsil günü bilinmez).
+        _odeme_kolonlari = [r[1] for r in cur.execute("PRAGMA table_info(odemeler)").fetchall()]
+        if "tahsil_zamani" not in _odeme_kolonlari:
+            cur.execute("ALTER TABLE odemeler ADD COLUMN tahsil_zamani TEXT")
+        if "tahsil_eden" not in _odeme_kolonlari:
+            cur.execute("ALTER TABLE odemeler ADD COLUMN tahsil_eden TEXT")
+
+        # 1.0.5: misafir kartı — rezervasyondan bağımsız, misafirin bütün
+        # konaklamalarında görünen not ve "sorunlu misafir" uyarısı. Misafir
+        # telefonun son 10 hanesi (telefon_anahtar) veya TC/belge no ile bulunur.
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS misafir_kartlari (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                telefon_anahtar TEXT DEFAULT '',
+                tc_no TEXT DEFAULT '',
+                ad_soyad TEXT DEFAULT '',
+                notu TEXT DEFAULT '',
+                sorunlu INTEGER DEFAULT 0,
+                guncelleyen TEXT,
+                guncelleme_zamani TEXT
+            )
+        """)
+
         # Resepsiyon calisanlari - hangi rezervasyonu kimin aldigini takip etmek icin
         cur.execute("""
             CREATE TABLE IF NOT EXISTS kullanicilar (

@@ -613,6 +613,69 @@ izin verdi. Düzeltmeler:
   kaydı da kayboluyordu). Log artık commit'ten sonra yazılıyor. **Kural:**
   `islem_yaz` asla açık bir yazma işlemi içinde çağrılmamalı.
 
+### 1.0.5 (dal `claude/project-thread-qapk35`, 1.0.4.7 dalının ÜSTÜNE, bulut
+oturumunda Claude Code ile yapıldı, PR ile gönderildi — **Release YOK**)
+
+Kullanıcı özellik önerisi istedi; sunulan 9 öneriden şunları seçti: gün sonu
+kasa raporu, açık borçlar, tekrar gelen misafir + misafir notu, PDF hesap
+dökümü, açılış özeti, genişletilmiş istatistik. **Reddettikleri (tekrar
+önerme):** yedeği harici klasöre kopyalama ("ileride ekleriz"), kapora/ön
+ödeme (misafirhanede kapora yok), dönemsel/sezonluk fiyat (fiyat Ayarlar'dan
+değiştiriliyor, sezonluk fiyat yok).
+
+- **Şema (otomatik migrasyon):** `odemeler.tahsil_zamani` / `tahsil_eden`
+  (`odeme_guncelle` ödendi işaretlenirken yazar, `loglama.AKTIF_KULLANICI`;
+  zaten ödenmiş gecenin şekli değişince ilk zaman korunur; ödendi kaldırılınca
+  silinir). `_odemeleri_yeniden_kur` ve `oda_degistir`'in ödeme taşıma
+  INSERT'leri bu iki kolonu da kopyalar (yeni kolon eklerken bu iki INSERT'i
+  unutma — 1.0.4.3/1.0.4.5'teki hatanın aynısı olur). Yeni tablo
+  `misafir_kartlari` (telefon_anahtar = telefonun son 10 hanesi, tc_no, notu,
+  sorunlu). 1.0.5 öncesi ödenmiş kayıtların tahsil günü bilinmez → kasa
+  raporuna girmez (pencerede yazıyor).
+- **Kasa / Borçlar** (`kasa_pencere.py`, üst çubukta "💰 Kasa / Borçlar"):
+  `repository.gun_sonu_kasa(tarih)` (tahsil gününe göre, gecenin tarihine göre
+  DEĞİL), `export.gun_sonu_kasa_disa_aktar`; `repository.acik_borclar()`
+  (check-in'li, iptal olmayan satırların BUGÜNDEN ÖNCEKİ ödenmemiş geceleri —
+  bu gece henüz tamamlanmadığı için sayılmaz), `odasi_borclarini_tahsil_et`.
+  Çıkış sekmesinde (normal ve erken çıkış tablosu) satıra çift tık →
+  `CikisTab._cift_tik_tahsil_cikis`: seçili günden önceki borç varsa sorulur,
+  ödeme şekli seçilip `odasi_borclarini_tahsil_et(ro_id, sekil, tarih)` ile
+  tahsil edilir, ardından normal `cikis_akisi` açılır (aynı gün girip çıkanın
+  o günkü gecesi `cikis_akisi`'nın kendi tahsil sorusunda kalır).
+- **Tekrar gelen misafir / misafir kartı:** `repository.telefon_anahtari`,
+  `misafir_gecmisi` (aynı telefon ya da rezervasyon/misafirler TC'si; iptal
+  olmayan ve en az bir odası check-in yapılmış kayıtlar), `misafir_karti_getir`
+  / `misafir_karti_kaydet` (boş not + sorunsuz → kart silinir). Yeni
+  Rezervasyon'da telefon `editingFinished` → `_misafiri_tani` (ad boşsa son
+  kayıttaki adla doldurur; sorunluysa kayıtta ayrıca onay sorar). Rezervasyon
+  detayında sol altta "Misafir Kartı" kutusu (not + sorunlu, "Bilgileri
+  Kaydet" ile kaydedilir) ve sorunluysa üstte kırmızı uyarı.
+- **Hesap dökümü:** `hesap_dokumu.py` (QTextDocument + QPdfWriter, ek
+  kütüphane yok), detayda "🖨 Hesap Dökümü" → PDF kaydedilip açılır. Başlıktaki
+  tesis adı Ayarlar > Genel > "Tesis adı" (`ayarlar.tesis_adi`).
+- **Günün özeti:** `repository.gunun_ozeti`, `main.GunOzetiDialog`; açılışta
+  gelmeyen rezervasyon sorusundan sonra gösterilir (`AnaPencere._acilis_akisi`),
+  Ayarlar > Genel'den kapatılabilir (`ayarlar.acilis_ozeti`), üst çubukta
+  "📋 Günün Özeti" ile tekrar açılır. KBS sayıları `kbs.kbs_durum_ozet`'ten.
+- **İstatistik:** `repository.aylik_detay_istatistik` (doluluk = satılan
+  oda-gece / (bugünkü aktif oda × ayın günü), ortalama gecelik, ortalama kalış,
+  ödeme şekli ve referans dağılımı); sekmede önceki ay + geçen yıl aynı ay
+  sütunları ve iki alt tablo.
+- **Test verisi:** `test_verisi_105.py <klasör> [--ac]` — örnek verili test
+  veritabanını YALNIZCA verilen klasöre kurar (proje klasörü/%LOCALAPPDATA%
+  reddedilir; eski `test_verisi_*.py` betikleri proje klasöründeki
+  misafirhane.db'yi silip yeniden kurar, onları kullanma). 4 ay geçmiş + geçen
+  yıl aynı dönem + 2 ay ileri; geçmiş tahsilatlar gerçekçi tahsil günlü;
+  tekrar gelen misafirler (0532 400 10 01 Hakan, 0533 400 10 02 Serkan —
+  sorunlu, 0544 400 10 03 Derya); giriş `oğuz / 1234`. `--ac` uygulamayı o
+  veriyle açar. Bu veride genel offscreen test (185 günün bütün sorguları,
+  bütün sekmeler, 120 rezervasyon detayı, çıkış/tahsilat akışları, PDF/Excel)
+  ~2000 çağrıda hatasız geçti.
+- **Test:** yeni kalıcı `yeni_ozellik_test.py` (iş katmanı + offscreen arayüz
+  açılışı, 45+ kontrol) geçti; `hata_duzeltme_test.py`, `kbs_test.py`,
+  `oda_degistir_kbs_test.py` ve `/mnt/project-files/inceleme/testler/` geçti.
+  Windows'ta gerçek arayüzle elle deneme henüz yapılmadı.
+
 ---
 
 ## 5. GitHub yapısı ve kuralları
@@ -638,6 +701,8 @@ izin verdi. Düzeltmeler:
     istemeden oluşturma.
   - **1.0.4.7 (hata düzeltmeleri, PR ile) için release YOK** — kullanıcı
     istemeden oluşturma.
+  - **1.0.5 (yeni özellikler, 1.0.4.7'nin üstüne ayrı PR) için release YOK** —
+    kullanıcı istemeden oluşturma.
   - **1.0.4.4 için GitHub Release VAR** (bkz. yukarı). Önceki bir not burada
     "release yok" diyordu, bu 21 Eylül 2026'da `gh release list` ile
     doğrulanıp düzeltildi — ayrıntı için madde 4'teki "1.0.4.4" bölümünün
@@ -707,8 +772,11 @@ izin verdi. Düzeltmeler:
 
 ## 8. Mevcut durum + bilinen eksikler / öneriler
 
-- En yeni sürüm: **1.0.4.7** (hata düzeltmeleri; dal
-  `claude/project-thread-di8nv3`, PR ile `main`'e) — **GitHub Release YOK**.
+- En yeni sürüm: **1.0.5** (kasa/borç, misafir kartı, hesap dökümü, günün
+  özeti, istatistik; dal `claude/project-thread-qapk35`, 1.0.4.7 dalının
+  üstüne ayrı PR) — **GitHub Release YOK**. Altındaki 1.0.4.7 (hata
+  düzeltmeleri; dal `claude/project-thread-di8nv3`, PR ile `main`'e) da
+  release'siz; önce o PR birleşmeli.
   Öncesi: 1.0.4.6 (`4cf1742` + `7b61dbe` + docs `8b7b235`), o da release'siz. Ders (tekrar): bir sürüm eklerken madde 4, 5 VE 8'in hepsi
   güncellenmeli — bu oturum bu üçünü de güncelledi.
 - Bu `CLAUDE.md` dosyası 1.0.4.3'e kadar (yani epeyce geç) **git'e hiç

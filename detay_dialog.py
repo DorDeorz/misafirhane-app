@@ -455,6 +455,14 @@ class RezervasyonDetayDialog(QDialog):
         ust.addWidget(QLabel(f"<span style='color:#777;'>Alınma: {alinma_tarihi} · {alan_kullanici}</span>"))
         kok.addLayout(ust)
 
+        self.kart = repository.misafir_karti_getir(r["telefon"], r["tc_no"])
+        if self.kart and self.kart["sorunlu"]:
+            sorunlu = QLabel(f"⚠ Sorunlu misafir olarak işaretli: {self.kart['notu'] or '(not yok)'}")
+            sorunlu.setWordWrap(True)
+            sorunlu.setStyleSheet("color: #922b21; background-color: #f8d0d0; padding: 5px 8px; "
+                                  "border-radius: 5px; font-weight: 600;")
+            kok.addWidget(sorunlu)
+
         if r["iptal"]:
             uyari = QLabel("⚠ Bu rezervasyon iptal edildi. Oda satırları düzenlenemez; "
                            "iptali geri almak için 'Rezervasyon Yönetimi' ekranını kullan.")
@@ -494,6 +502,7 @@ class RezervasyonDetayDialog(QDialog):
         form.addRow("Notlar:", self.notlar)
         form_kutu.setLayout(form)
         sol_lay.addWidget(form_kutu)
+        sol_lay.addWidget(self._misafir_karti_kutusu())
         sol_lay.addStretch(1)
         split.addWidget(sol)
 
@@ -647,6 +656,12 @@ class RezervasyonDetayDialog(QDialog):
         ))
         alt.addStretch(1)
 
+        dokum_btn = QPushButton("🖨 Hesap Dökümü")
+        dokum_btn.setObjectName("ikincil")
+        dokum_btn.setToolTip("Misafire verilecek konaklama ve ödeme dökümünü PDF olarak kaydeder.")
+        dokum_btn.clicked.connect(self.hesap_dokumu)
+        alt.addWidget(dokum_btn)
+
         iptal_btn = QPushButton("🚫 Rezervasyonu İptal Et")
         iptal_btn.setObjectName("ikincil")
         iptal_btn.setStyleSheet("color: #c0392b;")
@@ -665,6 +680,73 @@ class RezervasyonDetayDialog(QDialog):
         kaydet_btn.clicked.connect(self.kaydet)
         alt.addWidget(kaydet_btn)
         kok.addLayout(alt)
+
+    # ---------------- misafir kartı + hesap dökümü (1.0.5) ----------------
+    def _misafir_karti_kutusu(self):
+        """Misafirin önceki konaklamaları + tüm konaklamalarında görünen not
+        ve 'sorunlu misafir' işareti. Not, 'Bilgileri Kaydet' ile kaydedilir."""
+        r = self.rez
+        kutu = QGroupBox("Misafir Kartı")
+        lay = QVBoxLayout(kutu)
+        lay.setContentsMargins(8, 14, 8, 8)
+        lay.setSpacing(4)
+        try:
+            gecmis = repository.misafir_gecmisi(r["telefon"], r["tc_no"], haric_rez_id=r["id"])
+        except Exception:
+            gecmis = []
+        if gecmis:
+            son = gecmis[0]
+            metin = (f"🔁 Daha önce <b>{len(gecmis)}</b> kez kaldı. Son: {son['giris']} → "
+                     f"{son['cikis']} (Oda {son['odalar']})")
+            etiket = QLabel(metin)
+            etiket.setToolTip("\n".join(
+                f"{g['giris']} → {g['cikis']} · {g['gece']} gece · Oda {g['odalar']} · {g['ad_soyad']}"
+                for g in gecmis))
+        else:
+            etiket = QLabel("İlk konaklaması (aynı telefon/TC ile önceki kayıt yok).")
+            etiket.setStyleSheet("color: #777;")
+        etiket.setWordWrap(True)
+        lay.addWidget(etiket)
+
+        kart = self.kart or {}
+        self.kart_notu = QTextEdit(kart.get("notu", ""))
+        self.kart_notu.setMaximumHeight(52)
+        self.kart_notu.setPlaceholderText("Misafir hakkında not (sonraki konaklamalarında da görünür)")
+        lay.addWidget(self.kart_notu)
+        self.kart_sorunlu = QCheckBox("⚠ Sorunlu misafir")
+        self.kart_sorunlu.setToolTip("Bu telefonla yeni rezervasyon alınırken uyarı gösterilir.")
+        self.kart_sorunlu.setChecked(bool(kart.get("sorunlu")))
+        lay.addWidget(self.kart_sorunlu)
+        return kutu
+
+    def _misafir_kartini_kaydet(self):
+        notu = self.kart_notu.toPlainText().strip()
+        sorunlu = self.kart_sorunlu.isChecked()
+        kart = self.kart or {}
+        if notu == (kart.get("notu") or "") and sorunlu == bool(kart.get("sorunlu")):
+            return
+        repository.misafir_karti_kaydet(
+            self.telefon.text().strip(), self.tc_no.text().strip(),
+            self.ad_soyad.text().strip(), notu, sorunlu)
+
+    def hesap_dokumu(self):
+        from PySide6.QtWidgets import QFileDialog
+        from PySide6.QtGui import QDesktopServices
+        from PySide6.QtCore import QUrl
+        import hesap_dokumu
+        ad = "".join(c if c.isalnum() else "_" for c in (self.rez["ad_soyad"] or "misafir"))
+        yol, _ = QFileDialog.getSaveFileName(
+            self, "Hesap Dökümünü Kaydet", f"hesap_dokumu_{self.rez_id}_{ad}.pdf", "PDF Dosyası (*.pdf)")
+        if not yol:
+            return
+        if not yol.lower().endswith(".pdf"):
+            yol += ".pdf"
+        try:
+            hesap_dokumu.hesap_dokumu_pdf(self.rez_id, yol)
+        except Exception as e:
+            QMessageBox.critical(self, "Hata", f"Hesap dökümü oluşturulamadı:\n{e}")
+            return
+        QDesktopServices.openUrl(QUrl.fromLocalFile(yol))
 
     # ---------------- oda seçimi + aksiyon çubuğu ----------------
     def _secili_oda(self):
@@ -867,6 +949,7 @@ class RezervasyonDetayDialog(QDialog):
                 referans=self.referans.text().strip(),
                 notlar=self.notlar.toPlainText().strip(),
             )
+            self._misafir_kartini_kaydet()
         except ValueError as e:
             QMessageBox.warning(self, "Hata", str(e))
             return

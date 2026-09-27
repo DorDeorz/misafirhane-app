@@ -3,6 +3,16 @@
 Bu dosya, evdeki masaüstü bilgisayardaki opencode oturumunun kaldığı yerden devam
 edebilmesi için hazırlandı. İlk iş olarak okuyun.
 
+## DEVAM (27 Eylül 2026) — Yeni özellikler (1.0.5, Release YOK)
+
+Kullanıcının seçtiği öneriler eklendi (ayrıntı: `CLAUDE.md` madde 4 "1.0.5"):
+💰 Kasa / Borçlar penceresi (gün sonu kasa + açık borçlar), tekrar gelen
+misafir ve misafir kartı (not + sorunlu uyarısı), PDF hesap dökümü, açılışta
+günün özeti, genişletilmiş istatistik. Reddedilenler (tekrar önerme): harici
+yedek, kapora, sezonluk fiyat. Dal 1.0.4.7'nin üstünde; önce 1.0.4.7 PR'ı
+birleşmeli. Yeni test: `yeni_ozellik_test.py`. Sonraki adım: Windows'ta elle
+deneme.
+
 ## DEVAM (27 Eylül 2026) — Kapsamlı test + 19 hata düzeltmesi (1.0.4.7, Release YOK)
 
 Bulut oturumunda tüm fonksiyonlar geçici DB + Qt offscreen ile test edildi;
