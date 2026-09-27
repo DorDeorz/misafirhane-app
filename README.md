@@ -134,6 +134,7 @@ kbs.py                 KBS (1774 sayılı Kanun) doğrulama mantığı
 kbs_pencere.py         KBS Bildirimi penceresi
 kasa_pencere.py        Kasa / Borçlar penceresi (gün sonu kasa, açık borçlar)
 hesap_dokumu.py        Misafire verilecek PDF hesap dökümü
+test_verisi_105.py     Ayrı klasöre örnek verili test veritabanı üretir (gerçek veriye dokunmaz)
 detay_dialog.py        Rezervasyon/misafir düzenleme pencereleri (çok odalı)
 takvim_widget.py       Takvim görünümü
 export.py              Excel çıktıları

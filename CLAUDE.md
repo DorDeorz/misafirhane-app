@@ -656,6 +656,16 @@ değiştiriliyor, sezonluk fiyat yok).
   oda-gece / (bugünkü aktif oda × ayın günü), ortalama gecelik, ortalama kalış,
   ödeme şekli ve referans dağılımı); sekmede önceki ay + geçen yıl aynı ay
   sütunları ve iki alt tablo.
+- **Test verisi:** `test_verisi_105.py <klasör> [--ac]` — örnek verili test
+  veritabanını YALNIZCA verilen klasöre kurar (proje klasörü/%LOCALAPPDATA%
+  reddedilir; eski `test_verisi_*.py` betikleri proje klasöründeki
+  misafirhane.db'yi silip yeniden kurar, onları kullanma). 4 ay geçmiş + geçen
+  yıl aynı dönem + 2 ay ileri; geçmiş tahsilatlar gerçekçi tahsil günlü;
+  tekrar gelen misafirler (0532 400 10 01 Hakan, 0533 400 10 02 Serkan —
+  sorunlu, 0544 400 10 03 Derya); giriş `oğuz / 1234`. `--ac` uygulamayı o
+  veriyle açar. Bu veride genel offscreen test (185 günün bütün sorguları,
+  bütün sekmeler, 120 rezervasyon detayı, çıkış/tahsilat akışları, PDF/Excel)
+  ~2000 çağrıda hatasız geçti.
 - **Test:** yeni kalıcı `yeni_ozellik_test.py` (iş katmanı + offscreen arayüz
   açılışı, 45+ kontrol) geçti; `hata_duzeltme_test.py`, `kbs_test.py`,
   `oda_degistir_kbs_test.py` ve `/mnt/project-files/inceleme/testler/` geçti.
