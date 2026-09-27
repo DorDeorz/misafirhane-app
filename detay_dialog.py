@@ -10,14 +10,14 @@ from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QFormLayout, QLabel, QLineEdit,
     QSpinBox, QComboBox, QTextEdit, QPushButton, QDialogButtonBox, QGroupBox,
     QTableWidget, QTableWidgetItem, QHeaderView, QMessageBox, QCheckBox,
-    QDateEdit, QScrollArea, QWidget, QSplitter, QSizePolicy
+    QDateEdit, QScrollArea, QWidget, QSplitter, QSizePolicy, QInputDialog
 )
 from PySide6.QtCore import Qt, QDate
 from datetime import date
 
 import repository
 import tema
-from database import fiyat_tipi_goster
+from database import fiyat_tipi_goster, ODEME_SEKILLERI
 from kbs import misafir_tipi, tc_dogrula, YABANCI_ALANLAR
 
 FIYAT_TIPLERI = ["Sabit", "Uye", "Ozel"]
@@ -107,6 +107,103 @@ def _tarih_degistir_akisi(ebeveyn, ro, yeni_giris, yeni_gece):
     return True
 
 
+def _iceride_min_gece(ro):
+    """İçerideki (check-in yapılmış, çıkışı yapılmamış) satırda gece sayısının
+    inebileceği en düşük değer; diğer satırlarda 1."""
+    if ro["checkin_yapildi"] and not _satir_getir(ro, "cikis_tarihi", None):
+        return repository.en_az_gece(ro["giris_tarihi"])
+    return 1
+
+
+def cikis_akisi(ebeveyn, ro_id, baslik, mesaj_on_ek, kesim_tarihi):
+    """Ortak çıkış akışı (Çıkış sekmesi ve rezervasyon detayındaki Çıkış butonu
+    aynı kuralları kullansın diye tek yerde): borç gösterimi, aynı gün girip çıkan
+    misafirin o günkü gecesi için tahsil/iade soruları, çıkışın kaydı ve önceden
+    ödenmiş ama kapsam dışı kalan gecelerin bildirimi. Başarılıysa True döner."""
+    if kesim_tarihi > date.today().isoformat():
+        QMessageBox.warning(
+            ebeveyn, "Çıkış Yapılamaz",
+            f"İleri bir tarihe ({kesim_tarihi}) çıkış yapılamaz. Çıkış, misafir fiilen "
+            "ayrıldığı gün işlenmelidir.")
+        return False
+    ro = repository.rezervasyon_odasi_getir(ro_id)
+    odemeler = repository.odasi_odemeler(ro_id)
+    bugunku = next((o for o in odemeler if o["tarih"] == kesim_tarihi), None)
+    ayni_gun = bool(ro) and (ro["giris_tarihi"] == kesim_tarihi)
+
+    borc = repository.odasi_odenmemis_tutar(ro_id, kesim_tarihi=kesim_tarihi)
+    mesaj = mesaj_on_ek + " İşlem sonrası oda 'temizlikte' durumuna alınır."
+    if ayni_gun and bugunku is not None and not bugunku["odendi"]:
+        mesaj += (
+            f"\n\n⚠ Bu misafir BUGÜN girip BUGÜN çıkıyor; bugünkü gece ücreti "
+            f"({bugunku['tutar']:,}₺) HENÜZ ÖDENMEDİ."
+        )
+    elif ayni_gun and bugunku is not None and bugunku["odendi"]:
+        mesaj += (
+            f"\n\nℹ Bu misafir BUGÜN girip BUGÜN çıkıyor; bugünün gecesi ödendiği "
+            f"için iade edilmesi gerekir."
+        )
+    elif borc:
+        mesaj += f"\n\n⚠ Ödenmemiş borç: {borc:,}₺"
+    else:
+        mesaj += "\n\nÖdenmemiş borcu yok."
+
+    cevap = QMessageBox.question(ebeveyn, baslik, mesaj, QMessageBox.Yes | QMessageBox.No)
+    if cevap != QMessageBox.Yes:
+        return False
+
+    if ayni_gun and bugunku is not None:
+        if not bugunku["odendi"]:
+            tahsil = QMessageBox.question(
+                ebeveyn, "Giriş Günü Ücreti",
+                f"Bugün girip bugün çıkan misafirin bugünkü gece ücreti "
+                f"({bugunku['tutar']:,}₺) henüz ÖDENMEDİ.\n\n"
+                "Tahsil edilsin mi?\n\n"
+                "Evet = ödeme alınır ve kaydedilir.\nHayır = ücret borçtan düşülür, çıkış yapılır.",
+                QMessageBox.Yes | QMessageBox.No,
+            )
+            if tahsil == QMessageBox.Yes:
+                sekli, ok = QInputDialog.getItem(
+                    ebeveyn, "Ödeme Şekli", "Ödeme nasıl alındı?", ODEME_SEKILLERI, 0, False)
+                if not ok:
+                    return False
+                repository.odeme_guncelle(bugunku["id"], True, sekli)
+        else:
+            iade = QMessageBox.question(
+                ebeveyn, "Giriş Günü Ücreti",
+                f"Bugün girip bugün çıkan misafir bugünkü geceyi önceden ÖDEDİ "
+                f"({bugunku['tutar']:,}₺).\n\nİade edilmesi gerekiyor. İade yapıldı mı?\n\n"
+                "Evet = bu gecenin ücreti iptal edilir (kayıt silinir).\n"
+                "Hayır = ödeme kaydı korunur.",
+                QMessageBox.Yes | QMessageBox.No,
+            )
+            if iade == QMessageBox.Yes:
+                try:
+                    repository.odeme_sil(bugunku["id"])
+                except Exception as e:
+                    QMessageBox.warning(ebeveyn, "İade Yapılamadı", str(e))
+                    return False
+
+    try:
+        dusen_odenmis = repository.odasi_cikis_yap(ro_id, kesim_tarihi)
+    except Exception as e:
+        QMessageBox.warning(ebeveyn, "Çıkış Yapılamadı", str(e))
+        return False
+    # Aynı gün girip çıkan misafirin bugünkü gecesi zaten yukarıdaki özel
+    # akışta karara bağlandı (tahsil / iade); genel 'önceden ödenmiş
+    # geceler' bilgisine düşmesin diye filtrelenir.
+    if ayni_gun and bugunku is not None:
+        dusen_odenmis = [t for t in dusen_odenmis if t != bugunku["tarih"]]
+    if dusen_odenmis:
+        QMessageBox.information(
+            ebeveyn, "Önceden Ödenmiş Geceler",
+            "Şu geceler için daha önce ödeme alınmıştı ama misafir planlanandan "
+            "erken çıktı (ödendi bilgisi korundu, tutar iade edilmedi):\n"
+            + ", ".join(dusen_odenmis),
+        )
+    return True
+
+
 class OdaTarihDialog(QDialog):
     """Tek oda satırının giriş tarihi / gece sayısını değiştirir.
     Konaklama başlamışsa (giriş geçmişte) giriş tarihi KİLİTLİ, yalnızca gece
@@ -138,7 +235,8 @@ class OdaTarihDialog(QDialog):
         form.addRow("Giriş Tarihi:", self.tarih_giris)
 
         self.tarih_gece = QSpinBox()
-        self.tarih_gece.setRange(1, 365)
+        # İçerideki misafirde planlı çıkış bugünden önceye çekilemez.
+        self.tarih_gece.setRange(_iceride_min_gece(ro_row), 365)
         self.tarih_gece.setValue(ro_row["gece_sayisi"] or 1)
         form.addRow("Gece Sayısı:", self.tarih_gece)
         layout.addLayout(form)
@@ -604,7 +702,8 @@ class RezervasyonDetayDialog(QDialog):
         self.oda_tarih_btn.setEnabled(duzenlenebilir_mi)
         self.oda_degistir_btn.setEnabled(duzenlenebilir_mi)
         self.oda_gece_artir_btn.setEnabled(duzenlenebilir_mi)
-        self.oda_gece_azalt_btn.setEnabled(duzenlenebilir_mi and (o["gece_sayisi"] or 1) > 1)
+        self.oda_gece_azalt_btn.setEnabled(
+            duzenlenebilir_mi and (o["gece_sayisi"] or 1) > _iceride_min_gece(o))
         self.oda_cikis_btn.setEnabled(
             canli_mi and bool(o["checkin_yapildi"]) and not o["cikis_tarihi"])
         fatura_isteniyor = bool(_satir_getir(o, "fatura_istiyor", 0))
@@ -656,8 +755,13 @@ class RezervasyonDetayDialog(QDialog):
         if o is None:
             return
         yeni_gece = (o["gece_sayisi"] or 1) + delta
-        if yeni_gece < 1:
-            QMessageBox.warning(self, "Gece Sayısı", "Gece sayısı en az 1 olabilir.")
+        en_az = _iceride_min_gece(o)
+        if yeni_gece < en_az:
+            QMessageBox.warning(
+                self, "Gece Sayısı",
+                "Gece sayısı en az 1 olabilir." if en_az == 1 else
+                f"Misafir hâlâ içeride; gece sayısı {en_az}'den aşağı indirilemez "
+                "(planlı çıkış bugünden önceye alınamaz). Misafir ayrıldıysa Çıkış'ı kullan.")
             return
         if delta > 0:
             # Sadece UZATMA: hemen ertesi günde başka bir rezervasyon varsa genel
@@ -726,31 +830,14 @@ class RezervasyonDetayDialog(QDialog):
             self.accept()
 
     def _odada_cikis(self, ro_row):
-        bugun = date.today().isoformat()
-        borc = repository.odasi_odenmemis_tutar(ro_row["id"], kesim_tarihi=bugun)
-        borc_metni = (f"\n\n⚠ Ödenmemiş borç: {borc:,}₺" if borc else "\n\nÖdenmemiş borcu yok.")
-        cevap = QMessageBox.question(
-            self, "Çıkış İşlemi",
-            f"{ro_row['kat_adi']} - Oda {ro_row['oda_no']}'daki misafir çıkış yaptı mı? "
-            "İşlem sonrası oda 'temizlikte' durumuna alınır." + borc_metni,
-            QMessageBox.Yes | QMessageBox.No
-        )
-        if cevap != QMessageBox.Yes:
-            return
-        try:
-            dusen_odenmis = repository.odasi_cikis_yap(ro_row["id"])
-        except ValueError as e:
-            QMessageBox.warning(self, "Çıkış Yapılamadı", str(e))
-            return
-        if dusen_odenmis:
-            QMessageBox.information(
-                self, "Önceden Ödenmiş Geceler",
-                "Şu geceler için daha önce ödeme alınmıştı ama misafir planlanandan "
-                "erken çıktı (ödendi bilgisi korundu, tutar iade edilmedi):\n"
-                + ", ".join(dusen_odenmis),
-            )
-        self.kaydedildi = True
-        self.accept()
+        # Çıkış sekmesiyle aynı akış (aynı gün giriş-çıkış tahsil/iade dahil).
+        if cikis_akisi(
+            self, ro_row["id"], "Çıkış İşlemi",
+            f"{ro_row['kat_adi']} - Oda {ro_row['oda_no']}'daki misafir çıkış yaptı mı?",
+            date.today().isoformat(),
+        ):
+            self.kaydedildi = True
+            self.accept()
 
     def iptal_et(self):
         cevap = QMessageBox.question(
@@ -759,7 +846,11 @@ class RezervasyonDetayDialog(QDialog):
             QMessageBox.Yes | QMessageBox.No
         )
         if cevap == QMessageBox.Yes:
-            repository.rezervasyon_iptal(self.rez_id)
+            try:
+                repository.rezervasyon_iptal(self.rez_id)
+            except Exception as e:
+                QMessageBox.warning(self, "İptal Edilemedi", str(e))
+                return
             self.kaydedildi = True
             self.accept()
 
@@ -902,7 +993,12 @@ class CheckinDialog(QDialog):
         layout.addWidget(self.fiyat_bilgi)
 
         btns = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Close)
-        kaydet_metni = "Check-in'i Tamamla" if not r["checkin_yapildi"] else "Kaydet"
+        if r["checkin_yapildi"]:
+            kaydet_metni = "Kaydet"
+        elif r["giris_tarihi"] > date.today().isoformat():
+            kaydet_metni = "Misafirleri Kaydet (check-in giriş günü)"
+        else:
+            kaydet_metni = "Check-in'i Tamamla"
         btns.button(QDialogButtonBox.Save).setText(kaydet_metni)
         btns.button(QDialogButtonBox.Save).setObjectName("birincil")
         btns.button(QDialogButtonBox.Close).setText("Kapat")
@@ -1107,9 +1203,27 @@ class CheckinDialog(QDialog):
                     return
                 misafir_listesi.append((ad, belge_no, tip, ucret))
 
-        repository.odasi_misafirleri_kaydet_ve_checkin(
-            self.ro_id, misafir_listesi, ekstra_yatak=self.ekstra_yatak,
-            fatura_istiyor=self.fatura_check.isChecked())
+        ileri_tarihli = (not self.ro["checkin_yapildi"]
+                         and self.ro["giris_tarihi"] > date.today().isoformat())
+        try:
+            if ileri_tarihli:
+                # Giriş günü henüz gelmedi: misafir bilgileri şimdiden kaydedilir
+                # ama check-in (ve KBS giriş bildirimi) giriş günü yapılır.
+                repository.odasi_misafirleri_kaydet(
+                    self.ro_id, misafir_listesi, ekstra_yatak=self.ekstra_yatak,
+                    fatura_istiyor=self.fatura_check.isChecked())
+            else:
+                repository.odasi_misafirleri_kaydet_ve_checkin(
+                    self.ro_id, misafir_listesi, ekstra_yatak=self.ekstra_yatak,
+                    fatura_istiyor=self.fatura_check.isChecked())
+        except Exception as e:
+            QMessageBox.warning(self, "Kaydedilemedi", str(e))
+            return
+        if ileri_tarihli:
+            QMessageBox.information(
+                self, "Misafirler Kaydedildi",
+                f"Misafir bilgileri kaydedildi. Giriş tarihi ({self.ro['giris_tarihi']}) "
+                "henüz gelmediği için check-in giriş günü yapılacak.")
 
         self.kaydedildi = True
         self.accept()

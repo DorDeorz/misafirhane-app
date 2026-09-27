@@ -5,7 +5,7 @@
 Her sürümde SURUM arttirilir; guncelleme aracı ve kurulum paketi bu değeri kullanır."""
 
 UYGULAMA_ADI = "Misafirhane Rezervasyon"
-SURUM = "1.0.4.6"
+SURUM = "1.0.4.7"
 
 YENILIKLER = {
     "1.0.0": "İlk yayın sürümü. Rezervasyon, oda durumu, takvim, rapor ve yedekleme.",
@@ -129,6 +129,28 @@ YENILIKLER = {
                 "gösterir. Düzeltme: Rezervasyon Yönetimi'ndeki temizlik "
                 "kontrolünde okunamayan satır verisi (sqlite3.Row.get) "
                 "dict'e çevrilerek giderildi.",
+    "1.0.4.7": "Hata düzeltmeleri (kapsamlı test sonrası): İptali geri alınan "
+                "rezervasyon, odası o arada başkasına satıldıysa artık reddedilir "
+                "(çifte satış önlendi). İçerideki misafirin gece sayısı çıkışı "
+                "geçmişte kalacak kadar düşürülemez. KBS: misafir bilgisi "
+                "düzeltilince 'Gönderildi' durumu korunur; oda değiştikten sonra "
+                "odaya eklenen yeni kişi giriş bildirimine düşer. Konaklamış "
+                "rezervasyon iptal edilemez. İleri tarihli rezervasyona check-in "
+                "yapılamaz (misafirler önceden kaydedilebilir). Rezervasyon "
+                "detayındaki Çıkış butonu artık aynı gün giriş-çıkış tahsil/iade "
+                "sorularını da soruyor. İleri tarihli çıkış engellendi; Erken "
+                "Çıkış seçili tarihi kullanır. Oda Durumu'nda iptal geçmişi olan "
+                "oda artık iki kez görünmüyor. Aynı oda bir rezervasyonda iki ayrı "
+                "dönemle kaydedilebilir, misafir eski odasına geri taşınabilir. "
+                "Temizlikte/arızalı oda ileri tarihli rezervasyona açık. Kendi "
+                "hesabını / son aktif kullanıcıyı pasif yapma engellendi; 'İ' ile "
+                "yazılan kullanıcı adları küçük harfle de girilebilir. Giriş günü "
+                "geçip hiç gelmeyen rezervasyonlar açılışta listelenir ve iptal "
+                "edilsin mi diye sorulur ('Gelmedi (İptal)'; iptal edilmesin denen "
+                "ya da iptali geri alınan bir daha sorulmaz). Çıkışı unutulan kalış planlı çıkış tarihiyle otomatik "
+                "kapatılır. Erken Çıkış listesi yalnızca şu an misafirhanede "
+                "kalanları gösterir. Arızalı/temizlikte odayı temize çekerken "
+                "yaşanan birkaç saniyelik donma giderildi.",
 }
 
 

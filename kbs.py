@@ -248,11 +248,41 @@ def kbs_bekleyenler(db_yolu=None, takip_yolu=None):
     finally:
         takip.close()
 
+    # Oda değiştirme zinciri: her satırdaki kişilerin kimlik anahtarları
+    # (TC/belge no, yoksa ad). Devam satırındaki bir kişi, önceki satırda da
+    # varsa zaten bildirilmiştir (giriş değil); devam satırında YENİ olan kişi
+    # (oda değiştikten sonra eklenen) ise gerçek bir giriştir ve bildirilmelidir.
+    # Aynı şekilde, kapanan satırdaki bir kişi devam satırında yoksa (odayla
+    # birlikte taşınmadı) gerçekten ayrılmıştır ve çıkışı bildirilmelidir.
+    kimlikler = {}
+    onceki = {}
+    sonrakiler = {}
+    for v in veriler:
+        kimlikler.setdefault(v["ro_id"], set()).add(_kimlik_anahtari(v))
+        if v["onceki_ro_id"]:
+            onceki[v["ro_id"]] = v["onceki_ro_id"]
+            sonrakiler.setdefault(v["onceki_ro_id"], set()).add(v["ro_id"])
+
+    def _oncekilerde_var_mi(ro_id, anahtar):
+        gorulen = set()
+        ata = onceki.get(ro_id)
+        while ata and ata not in gorulen:
+            gorulen.add(ata)
+            if anahtar in kimlikler.get(ata, ()):
+                return True
+            ata = onceki.get(ata)
+        return False
+
+    def _sonrakilerde_var_mi(ro_id, anahtar):
+        return any(anahtar in kimlikler.get(c, ()) for c in sonrakiler.get(ro_id, ()))
+
     giris, cikis = [], []
     for v in veriler:
+        anahtar = _kimlik_anahtari(v)
         # onceki_ro_id doluysa bu satır bir oda değiştirmeyle oluşan DEVAM satırıdır:
-        # misafir zaten (eski satırdan) bildirilmiş sayılır, yeni bir "giriş" değildir.
-        if v["checkin_yapildi"] and not v["onceki_ro_id"]:
+        # önceki satırda da bulunan misafir zaten bildirilmiş sayılır.
+        devam_eden_kisi = bool(v["onceki_ro_id"]) and _oncekilerde_var_mi(v["ro_id"], anahtar)
+        if v["checkin_yapildi"] and not devam_eden_kisi:
             g = dict(v, tur="GİRİŞ", tarih=v["giris_tarihi"],
                      kesit="%s:%s:giris" % (v["ro_id"], v["misafir_id"]))
             g["not"] = _satir_notu(v)
@@ -260,13 +290,25 @@ def kbs_bekleyenler(db_yolu=None, takip_yolu=None):
                 giris.append(g)
         # devam_var_mi True ise bu satırın cikis_tarihi'si gerçek bir otelden ayrılış
         # değil, oda değiştirme sırasında satırın kapatılmasından kaynaklanır.
-        if v["cikis_tarihi"] and not v["devam_var_mi"]:
+        tasinan_kisi = v["devam_var_mi"] and (
+            _sonrakilerde_var_mi(v["ro_id"], anahtar) or not sonrakiler.get(v["ro_id"]))
+        if v["cikis_tarihi"] and not tasinan_kisi:
             c = dict(v, tur="ÇIKIŞ", tarih=v["cikis_tarihi"],
                      kesit="%s:%s:cikis" % (v["ro_id"], v["misafir_id"]))
             c["not"] = _satir_notu(v)
             if c["kesit"] not in izlenenler:
                 cikis.append(c)
     return giris, cikis
+
+
+def _kimlik_anahtari(v):
+    """Aynı fiziksel kişiyi oda değiştirme satırları arasında eşlemek için:
+    TC/belge no varsa o, yoksa sadeleştirilmiş ad soyad."""
+    tc = (v.get("tc_no") or "").strip()
+    if tc:
+        return "tc:" + tc
+    ad = (v.get("misafir_ad") or "").replace("İ", "i").replace("I", "ı").lower()
+    return "ad:" + " ".join(ad.split())
 
 
 def _satir_notu(v):

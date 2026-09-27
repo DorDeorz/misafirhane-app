@@ -19,6 +19,18 @@ def _sifre_hashle(sifre, tuz_hex=None):
     return hash_bytes.hex(), tuz_hex
 
 
+def _ad_normalle(kullanici_adi):
+    """Kullanıcı adını küçük harfe çevirir. Python'un lower()'ı Türkçe 'İ'yi
+    'i' + birleşik nokta (U+0307) yapar; bu yüzden 'İSMAİL' diye açılan hesaba
+    'ismail' yazarak girilemiyordu. Birleşik nokta atılır."""
+    return (kullanici_adi or "").strip().lower().replace("\u0307", "")
+
+
+def _eski_ad_normalle(kullanici_adi):
+    """1.0.4.7 öncesi kayıtların saklandığı biçim (geriye uyum için)."""
+    return (kullanici_adi or "").strip().lower()
+
+
 def _sifre_dogrula(sifre, hash_hex, tuz_hex):
     hesaplanan, _ = _sifre_hashle(sifre, tuz_hex)
     return hesaplanan == hash_hex
@@ -45,7 +57,7 @@ def kullanici_listesi():
 
 
 def kullanici_ekle(kullanici_adi, sifre, ad_soyad=""):
-    kullanici_adi = kullanici_adi.strip().lower()
+    kullanici_adi = _ad_normalle(kullanici_adi)
     sifre = sifre.strip()
     if not kullanici_adi or not sifre:
         raise ValueError("Kullanıcı adı ve şifre boş olamaz.")
@@ -71,13 +83,27 @@ def kullanici_ekle(kullanici_adi, sifre, ad_soyad=""):
 
 def kullanici_dogrula(kullanici_adi, sifre):
     """Doğruysa kullanıcı satırını (id, kullanici_adi, ad_soyad) döner, değilse None."""
-    kullanici_adi = kullanici_adi.strip().lower()
+    adaylar = [_ad_normalle(kullanici_adi)]
+    eski = _eski_ad_normalle(kullanici_adi)
+    if eski not in adaylar:
+        adaylar.append(eski)
     sifre = sifre.strip()
     conn = get_connection()
     try:
-        row = conn.execute(
-            "SELECT * FROM kullanicilar WHERE kullanici_adi=? AND aktif=1", (kullanici_adi,)
-        ).fetchone()
+        row = None
+        for aday in adaylar:
+            row = conn.execute(
+                "SELECT * FROM kullanicilar WHERE kullanici_adi=? AND aktif=1", (aday,)
+            ).fetchone()
+            if row is not None:
+                break
+        if row is None:
+            # Eski biçimde (birleşik noktalı) saklanmış kayıt, noktasız yazılan
+            # adla da bulunabilsin.
+            for r in conn.execute("SELECT * FROM kullanicilar WHERE aktif=1").fetchall():
+                if _ad_normalle(r["kullanici_adi"]) == adaylar[0]:
+                    row = r
+                    break
     finally:
         conn.close()
     if row is None:
@@ -89,6 +115,8 @@ def kullanici_dogrula(kullanici_adi, sifre):
 
 def sifre_degistir(kullanici_id, yeni_sifre):
     yeni_sifre = yeni_sifre.strip()
+    if len(yeni_sifre) < 4:
+        raise ValueError("Şifre en az 4 karakter olmalı.")
     hash_hex, tuz_hex = _sifre_hashle(yeni_sifre)
     conn = get_connection()
     try:
@@ -107,6 +135,13 @@ def sifre_degistir(kullanici_id, yeni_sifre):
 def kullanici_aktiflik_degistir(kullanici_id, aktif):
     conn = get_connection()
     try:
+        if not aktif:
+            diger = conn.execute(
+                "SELECT COUNT(*) as c FROM kullanicilar WHERE aktif=1 AND id != ?", (kullanici_id,)
+            ).fetchone()["c"]
+            if diger == 0:
+                raise ValueError(
+                    "Son aktif kullanıcı pasif yapılamaz; aksi halde programa kimse giriş yapamaz.")
         conn.execute("UPDATE kullanicilar SET aktif=? WHERE id=?", (1 if aktif else 0, kullanici_id))
         conn.commit()
     except Exception:
