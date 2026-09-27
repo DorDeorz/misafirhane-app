@@ -4,6 +4,22 @@ Küçük işletmeler ve misafirhaneler için **internetsiz çalışan** masaüst
 
 > Bu depo **açık (public)** bir projedir; gerçek kullanıcı verisi (`*.db`, yedekler) `.gitignore` ile hariç tutulur ve asla push edilmez. Uygulama Python + Qt (PySide6) ile yazılmıştır ve Windows için derlenmiş (exe) olarak dağıtılır.
 
+## Ekran görüntüleri
+
+> Görüntüler örnek (uydurma) test verisiyle alınmıştır; gerçek misafir bilgisi içermez.
+
+| Oda Durumu | Yeni Rezervasyon (tekrar gelen misafir) |
+|---|---|
+| ![Oda Durumu](docs/ekran/oda_durumu.png) | ![Yeni Rezervasyon](docs/ekran/tekrar_gelen_misafir.png) |
+| **Rezervasyon detayı ve misafir kartı** | **Çıkış (borç gösterimi, çift tıkla tahsil + çıkış)** |
+| ![Rezervasyon detayı](docs/ekran/rezervasyon_detayi.png) | ![Çıkış](docs/ekran/cikis.png) |
+| **Gün sonu kasa** | **Açık borçlar** |
+| ![Gün sonu kasa](docs/ekran/kasa.png) | ![Açık borçlar](docs/ekran/acik_borclar.png) |
+| **İstatistik** | **Rezervasyon Yönetimi** |
+| ![İstatistik](docs/ekran/istatistik.png) | ![Rezervasyon Yönetimi](docs/ekran/rezervasyon_yonetimi.png) |
+
+<p align="center"><img src="docs/ekran/gunun_ozeti.png" alt="Günün özeti" width="460"><br><em>Açılışta gösterilen günün özeti</em></p>
+
 ## Ne yapar?
 
 Uygulamanın tüm özellikleri, kullanıldıkları ekranlarla birlikte aşağıda **teker teker** listelenir.
@@ -23,7 +39,7 @@ Uygulamanın tüm özellikleri, kullanıldıkları ekranlarla birlikte aşağıd
 - **Oda durumları** — temiz / temizlikte / arızalı. Arızalı odada bitiş tarihi tutulur ve o aralıktaki rezervasyonlar engellenir. **Temizlikte/arızalı** bir odanın durum kolonuna (veya takvimdeki bloğuna ya da Rezervasyon Yönetimi'ndeki "Oda" sütununa) **çift tıklamak** "Oda temizlendi mi?" diye sorar, evetse odayı temiz durumuna alır.
 - **Check-in** — günün girişleri, misafir kaydı ve check-in tamamlama.
 - **Günün Girişleri** — çok odalı rezervasyonlar tek satırda görünür; her oda için **Geldi / Gelmedi (No-Show) / Bekleniyor** durumu ayrıca gösterilir.
-- **Çıkış** — check-in yapılmış odalar çıkış yapar, oda otomatik "temizlikte" durumuna alınır. Aynı gün girip aynı gün çıkan misafirde bugünkü gece de ücrete girer: ödenmemişse "Tahsil edilsin mi?", ödenmişse "İade yapıldı mı?" diye sorularak hesap netleştirilir.
+- **Çıkış** — check-in yapılmış odalar çıkış yapar, oda otomatik "temizlikte" durumuna alınır. Aynı gün girip aynı gün çıkan misafirde bugünkü gece de ücrete girer: ödenmemişse "Tahsil edilsin mi?", ödenmişse "İade yapıldı mı?" diye sorularak hesap netleştirilir. Listede ödenmemiş borç gösterilir; satıra **çift tıklayınca** önce borç tahsil edilir (ödeme şekli sorulur), ardından çıkış yapılır.
 - **Takvim Görünümü** — odaların günlük doluluk ızgarası; ad yalnızca giriş gününde yazılır, diğer geceler X olur; ipucunda isim, giriş-çıkış, rezervasyon no, fiyat ve referans bilgisi. Temizlikte/arızalı bir bloğa çift tık odayı temiz yapar (ana pencere de otomatik yenilenir).
 
 ### Rezervasyon Yönetimi ve Geçmiş
@@ -31,6 +47,15 @@ Uygulamanın tüm özellikleri, kullanıldıkları ekranlarla birlikte aşağıd
 - **Rezervasyon Yönetimi** — tüm rezervasyonları filtrele (Bugünkü / Beklenen / İçerideki / Çıkış Yapmış / Gelmedi (No-Show) / İptal), ara (yalnızca Ad Soyad'da anında filtreler), sırala ve Excel'e aktar. Uzun listelerde işlem butonları gizlenir, detay isme çift tık ile açılır — büyük veri setlerinde performans korunur.
 - **Geçmiş Kayıtlar** — çıkışı yapılmış eski misafirlerin kayıtları isimle aranıp bulunabilir ve Excel'e aktarılabilir.
 - **İşlem Geçmişi** — yapılan tüm işlemlerin denetim izi (kim, ne zaman, ne yaptı).
+
+### Kasa, Borçlar ve Misafir Takibi (1.0.5)
+
+- **Gün sonu kasa** — üst çubuktaki "💰 Kasa / Borçlar" penceresinde seçilen gün tahsil edilen gece ücretleri listelenir; ödeme şekline ve tahsil eden kullanıcıya göre toplanır, Excel'e aktarılır.
+- **Açık borçlar** — kalınmış ama henüz ödenmemiş geceler oda bazında listelenir; seçili borç tek tıkla tahsil edilir.
+- **Tekrar gelen misafir** — Yeni Rezervasyon'da telefon girilince misafirin önceki konaklamaları gösterilir, ad otomatik dolar.
+- **Misafir kartı** — misafirin bütün konaklamalarında görünen not ve "sorunlu misafir" uyarısı.
+- **Hesap dökümü** — rezervasyon detayından misafire verilecek PDF döküm alınır (tesis adı Ayarlar'dan).
+- **Günün özeti** — program açılınca bugünkü girişler, çıkışlar, boş odalar, fatura bekleyenler, açık borç ve KBS durumu tek pencerede (Ayarlar'dan kapatılabilir).
 
 ### KBS Bildirimi (1774 sayılı Kanun / Kimlik Bildirme Sistemi)
 
@@ -50,7 +75,7 @@ Uygulamanın tüm özellikleri, kullanıldıkları ekranlarla birlikte aşağıd
 ### Raporlar, Yedekleme, Diğer
 
 - **Raporlar & Excel** — günlük durum, rezervasyonlar ve tarih aralığı raporları `.xlsx` olarak dışa aktarılır.
-- **İstatistik** — aylık pazarlanan gece, gelir, tahsilat, iptal kayıp geceler ve no-show istatistikleri.
+- **İstatistik** — aylık satılan gece, doluluk oranı, satış ve tahsilat, ortalama gecelik fiyat, ortalama kalış, iptal ve no-show geceleri; önceki ay ve geçen yılın aynı ayıyla karşılaştırma, ödeme şekli ve referans dağılımı.
 - **Kullanıcı hesapları** — yönetici/çalışan girişi, şifre değiştirme, kullanıcı ekleme (kimin aldığı denetim izinde görünür).
 - **Yedekleme** — veritabanını tek tıkla yedekleme, yedekten geri yükleme, kapanışta otomatik yedek.
 - **Görünüm** — aydınlık / karanlık tema; ikisinde de ortak bileşen ve kompakt düzen.
@@ -92,7 +117,16 @@ Varsayılan tema Windows'un koyu/açık mod ayarından okunur. Uygulama açıkke
 
 ## Test Senaryoları (yerel)
 
-KBS ve arayüz testleri için yerelde bir test veritabanı (`misafirhane_deneme.db`) üretildi. Kullanıcılar canlı veritabanından aynen kopyalandı (`oğuz` kullanıcısı korundu); 18 oda ve müşteri senaryoları (rezervasyonlar `1001–1008`, oda satırları `2001–2012`) yazıldı.
+Uygulamayı gerçek veriye dokunmadan denemek için `test_verisi_105.py` örnek verili ayrı bir veritabanı kurar:
+
+```bash
+python test_verisi_105.py <klasör>        # veritabanını verilen klasöre kurar
+python test_verisi_105.py <klasör> --ac   # kurar ve uygulamayı o veriyle açar
+```
+
+Betik proje klasörüne ve `%LOCALAPPDATA%\Misafirhane`'ye yazmayı reddeder. Kalıcı testler: `hata_duzeltme_test.py`, `yeni_ozellik_test.py`, `kbs_test.py`, `oda_degistir_kbs_test.py`.
+
+KBS ve arayüz testleri için ayrıca yerelde bir test veritabanı (`misafirhane_deneme.db`) kullanılır: 18 oda ve müşteri senaryoları (rezervasyonlar `1001–1008`, oda satırları `2001–2012`).
 
 Deneme için geçerli TC numaraları:
 
@@ -152,7 +186,7 @@ kurulum.iss            Inno Setup kurulum betiği
 
 | Sürüm | Not |
 |-------|-----|
-| 1.0.5 | **Kasa, borç ve misafir takibi**: üst çubukta "💰 Kasa / Borçlar" (gün sonu kasa raporu: o gün tahsil edilenler, ödeme şekli ve tahsil edene göre toplam, Excel; açık borçlar: kalınmış ama ödenmemiş geceler, tek tıkla tahsilat); Yeni Rezervasyon'da telefon girilince tekrar gelen misafir ve önceki konaklamaları, ad otomatik dolar; misafir kartı (bütün konaklamalarda görünen not + "sorunlu misafir" uyarısı); rezervasyon detayından PDF hesap dökümü; açılışta günün özeti (Ayarlar'dan kapatılabilir); İstatistik'e doluluk oranı, ortalama gecelik fiyat, ortalama kalış, önceki ay / geçen yıl karşılaştırması, ödeme şekli ve referans dağılımı. Yeni test: `yeni_ozellik_test.py`. |
+| 1.0.5 | **Kasa, borç ve misafir takibi**: üst çubukta "💰 Kasa / Borçlar" (gün sonu kasa raporu: o gün tahsil edilenler, ödeme şekli ve tahsil edene göre toplam, Excel; açık borçlar: kalınmış ama ödenmemiş geceler, tek tıkla tahsilat); Yeni Rezervasyon'da telefon girilince tekrar gelen misafir ve önceki konaklamaları, ad otomatik dolar; misafir kartı (bütün konaklamalarda görünen not + "sorunlu misafir" uyarısı); rezervasyon detayından PDF hesap dökümü; açılışta günün özeti (Ayarlar'dan kapatılabilir); İstatistik'e doluluk oranı, ortalama gecelik fiyat, ortalama kalış, önceki ay / geçen yıl karşılaştırması, ödeme şekli ve referans dağılımı; Çıkış ekranında satıra çift tıklayınca borç tahsil edilip çıkış yapılır. Yeni test: `yeni_ozellik_test.py`. |
 | 1.0.4.7 | **Kapsamlı test sonrası hata düzeltmeleri**: iptali geri almada çifte satış engeli; içerideki misafirin çıkışı geçmişe çekilemez; KBS'de düzeltilen misafir tekrar bekleyenlere düşmez, oda değişiminden sonra eklenen kişi bildirilir; konaklamış rezervasyon iptal edilemez; ileri tarihli check-in ve ileri tarihli çıkış engellendi; detaydaki Çıkış butonu aynı gün tahsil/iade akışını kullanır; Erken Çıkış seçili tarihi kullanır; Oda Durumu'nda iptal satırı sızması giderildi; aynı oda iki dönem / eski odaya geri dönüş mümkün; temizlikte/arızalı oda ileri tarihlere açık; kullanıcı pasif yapma ve 'İ' harfli kullanıcı adı düzeltmeleri; giriş günü geçip gelmeyen rezervasyonlar için 'iptal edilsin mi?' sorusu (Gelmedi), çıkışı unutulan kalış planlı çıkışla otomatik kapanır, Erken Çıkış yalnızca içeride kalanları gösterir; oda durumunu değiştirirken yaşanan ~5 sn donma giderildi. Yeni test: `hata_duzeltme_test.py`. |
 | 1.0.4.6 | **Temizlik/arıza çift tıklamayla temize çekme + aynı gün giriş-çıkış hesabı**: "Temizlikte"/"Arızalı" bir oda artık Oda Durumu durum kolonuna, takvim bloğuna ve Rezervasyon Yönetimi "Oda" sütununa çift tıklanarak "Oda temizlendi mi?" onayıyla temiz yapılabiliyor (arızalıda bitiş tarihi de sıfırlanır; dolu odalarda engellenir). Aynı gün girip aynı gün çıkan misafirin bugünkü gecesi artık ücrete giriyor: ödenmemişse "Tahsil edilsin mi?" (ödeme alınıp kaydedilir) ve ödenmişse "İade yapıldı mı?" (kayıt iptal edilir) akışı; çıkış listelerindeki borç sütunu bu geceyi gösterir. Bağımsız Takvim Görünümü'nden yapılan temizlik artık ana penceredeki diğer sekmeleri de otomatik yeniler. |
 | 1.0.4.5 | **Nakit kaldırıldı, Fatura takibi eklendi + hata düzeltmeleri**: Ödeme yöntemleri artık yalnızca Kredi Kartı / Havale-IBAN (Nakit ve ayrı bir "Fatura" seçeneği kaldırıldı). Check-in'de "Fatura İstiyor" işaretlenebiliyor; ödeme ekranlarında "Fatura alınmalı/alındı" gösteriliyor, ödeme alınırken fatura verildi mi diye sorulup tek tıkla işaretlenebiliyor. Düzeltmeler: "Çıkış Yap" artık bugünü değil Çıkış sekmesinde seçili tarihi kaydediyor (geriye dönük çıkış işlemede yanlış tarih ve silinen faturalanmamış tutar sorunu giderildi); oda değiştirmede fatura durumu artık kayboluyor; çıkış yapmış bir odada gece/tarih/oda değiştirme işlemleri artık engelleniyor (hem arayüz hem veritabanı katmanında); "Erken Çıkışlar" listesi artık seçili tarihe göre tutarlı; telefon doğrulama ülke kodsuz 10 haneli numaraları da kabul ediyor. |
