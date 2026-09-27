@@ -3,6 +3,20 @@
 Bu dosya, evdeki masaüstü bilgisayardaki opencode oturumunun kaldığı yerden devam
 edebilmesi için hazırlandı. İlk iş olarak okuyun.
 
+## DEVAM (27 Eylül 2026) — Kapsamlı test + 19 hata düzeltmesi (1.0.4.7, Release YOK)
+
+Bulut oturumunda tüm fonksiyonlar geçici DB + Qt offscreen ile test edildi;
+bulunan 19 sorunun hepsi kullanıcı izniyle düzeltildi (ayrıntı: `CLAUDE.md`
+madde 4 "1.0.4.7"). Öne çıkanlar: iptali geri almada çifte satış engeli,
+içerideki misafirin çıkışının geçmişe çekilmesi engeli, KBS'de düzeltilen
+misafirin tekrar bekleyenlere düşmemesi ve oda değişiminden sonra eklenen
+kişinin bildirilmesi, konaklamış rezervasyonun iptal edilememesi, ileri
+tarihli check-in/çıkış engeli, detaydaki Çıkış butonunun ortak
+`cikis_akisi` ile aynı gün tahsil/iade kuralını kullanması (önceki oturumdan
+kalan açık soru kapandı). `uk_rez_oda` tekil indeksi kaldırıldı (aynı oda iki
+dönem, A→B→A). Yeni kalıcı test: `hata_duzeltme_test.py`. Sonraki adım:
+Windows'ta gerçek arayüzle elle deneme; release kullanıcı isterse.
+
 ## DEVAM (21 Eylül 2026) — Temizlik/arıza çift tıklama + aynı gün giriş-çıkış hesabı (1.0.4.6, Release YOK)
 
 Ayrıntı için `CLAUDE.md` madde 4 "1.0.4.6" bölümüne bakın — özet:

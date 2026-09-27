@@ -90,7 +90,7 @@ Tablolar (`database.py` — `CREATE TABLE IF NOT EXISTS`):
   mükerrer "giriş" bildirimi üretmez (bkz. `kbs.py` `kbs_bekleyenler`).
 - `misafirler` — kişiler (ad soyad, TC, yabancı KBS bilgileri).
 - `odemeler` — ödenen gece sayısı, toplam ücret, alınan ücret vb.
-- `kullanicilar` — giriş kullanıcıları (iletki şifreli).
+- `kullanicilar` — giriş kullanıcıları (şifreler PBKDF2-SHA256 + tuz ile hash'li, `auth.py`).
 - `ayarlar` — uygulama ayarları.
 - `islem_gecmisi` — denetim izi (işlem geçmişi).
 
@@ -536,6 +536,61 @@ Kullanıcının ürettiği iki istek:
   tahsil/iade dalları, `_cikisi_uygula` uçtan uca, erken tablo görünümü,
   takvim ve bağımsız takvim penceresi callback'i — hepsi geçti.
 
+### 1.0.4.7 (dal `claude/project-thread-di8nv3`, bulut oturumunda Claude Code ile
+yapıldı, PR ile gönderildi — **Release YOK**)
+
+Kullanıcı "bütün fonksiyonları tek tek dene, olabilecek bütün ihtimalleri test
+et" dedi. Bulut ortamında geçici DB + Qt offscreen ile iş katmanında 60+ senaryo
+ve 11 sekmenin/pencerelerin tamamı denendi; 19 bulgu raporlandı
+(`/mnt/project-files/inceleme/test_raporu.md`), kullanıcı hepsinin düzeltilmesine
+izin verdi. Düzeltmeler:
+
+- **Çifte satış:** `rezervasyon_iptal_geri_al` artık her oda satırı için
+  `_musaitlik_sorgusu` ile çakışma kontrolü yapıyor; oda başkasına satıldıysa
+  reddediyor (`RezervasyonYonetimiTab.iptal_geri_al` hatayı gösteriyor).
+- **İçerideki misafirin çıkışı geçmişe çekilemez:** `rezervasyon_odasi_tarih_degistir`
+  check-in'li satırda planlı çıkış < bugün ise reddediyor; yeni
+  `repository.en_az_gece()`; detaydaki −1 Gece butonu ve `OdaTarihDialog` spin
+  kutusu bu alt sınırı kullanıyor. Gece < 1 de reddediliyor.
+- **KBS "Gönderildi" korunuyor:** `_misafirleri_kaydet_cur` misafirleri silip
+  yeniden eklemek yerine aynı kişiyi (TC/belge no, yoksa ad) mevcut kaydına
+  eşleyip UPDATE ediyor → misafir id'si, dolayısıyla KBS takip anahtarı değişmiyor.
+- **KBS oda değişimi zinciri kişi bazlı:** `kbs_bekleyenler` artık devam
+  satırındaki herkesi değil, yalnızca önceki satırda da bulunan kişiyi
+  "bildirilmiş" sayıyor (`_kimlik_anahtari`); oda değiştikten sonra eklenen yeni
+  kişi giriş bildirimine düşüyor, taşınmayan kişi için çıkış üretiliyor.
+- **Konaklamış rezervasyon iptal edilemez:** `rezervasyon_iptal` check-in'li
+  herhangi bir oda satırı varsa (çıkış yapılmış olsa bile) reddediyor.
+- **İleri tarihli check-in yok:** `_checkin_uygun_mu` (`odasi_checkin_yap` ve
+  `..._ve_checkin`); `CheckinDialog` ileri tarihli rezervasyonda misafirleri
+  check-in yapmadan kaydediyor ("Misafirleri Kaydet (check-in giriş günü)").
+- **Çıkış akışı tek yerde:** `detay_dialog.cikis_akisi()` (CikisTab'in eski
+  `_cikisi_uygula` gövdesi) — Çıkış sekmesi ve detaydaki Çıkış butonu aynı
+  aynı-gün tahsil/iade kuralını kullanıyor (madde 8 eksik 6 kapandı).
+  `odasi_cikis_yap` ileri tarihli, girişten önceki ve ikinci kez çıkışı
+  reddediyor; `odasi_checkin_geri_al` çıkışı yapılmış satırda reddediyor.
+  Erken Çıkış artık sekmede seçili tarihi yazıyor.
+- **Oda Durumu / Check-in listelerinde iptal satırı sızması:** `gunun_oda_durumu`
+  ve `gunun_checkin_durumu`'nda iptal filtresi `rezervasyon_odalar` join'ine
+  taşındı (oda iki kez görünüyordu).
+- **Aynı oda iki dönem / A→B→A:** `uk_rez_oda` TEKİL indeksi `init_db`'de
+  kaldırılıyor (yerine tekil olmayan `ix_rez_oda`); `oda_degistir`'deki
+  "hedef odada zaten satırı var" engeli kaldırıldı, kısmi taşımada çakışma
+  kontrolü yalnızca taşınan satırı hariç tutuyor.
+- **Temizlikte/arızalı oda tarih bazlı:** `_oda_durumu_sorgula(cur, oda_id,
+  baslangic_tarihi)` — temizlikte yalnızca bugün başlayan, arızalı yalnızca
+  arıza bitişinden önce başlayan kalışı engelliyor (takvim ızgarasıyla aynı kural).
+- Diğer: detaydan iptal hatası artık gösteriliyor; `rezervasyon_olustur` boş ad,
+  0 gece/kişi ve bozuk tarihi reddediyor; `rezervasyonlar_yabanci_sayilari`
+  `kbs.misafir_tipi` ile sayıyor; SQL `date('now')` → `date('now','localtime')`;
+  kendi hesabını ve son aktif kullanıcıyı pasif yapma engellendi; `auth`
+  kullanıcı adında Türkçe "İ" normalizasyonu (eski kayıtlar da bulunuyor);
+  `sifre_degistir` < 4 karakteri reddediyor.
+- **Test:** yeni kalıcı `hata_duzeltme_test.py` (repo) — hepsi geçti; `kbs_test.py`,
+  `oda_degistir_kbs_test.py` geçti; bulut oturumunun offscreen arayüz testleri
+  (`/mnt/project-files/inceleme/testler/`) yakalanmamış hata olmadan geçti.
+  Windows'ta gerçek arayüzle elle deneme henüz yapılmadı.
+
 ---
 
 ## 5. GitHub yapısı ve kuralları
@@ -558,6 +613,8 @@ Kullanıcının ürettiği iki istek:
     Bu hâlâ doğru — 1.0.4.3 hiç release edilmedi, sadece 1.0.4.4 edildi.
   - **1.0.4.6 (commit `4cf1742` + docs commit'i) için release YOK** — sürüm
     yeni yükseltildi, kullanıcı laptopta test edecek; release'i kullanıcı
+    istemeden oluşturma.
+  - **1.0.4.7 (hata düzeltmeleri, PR ile) için release YOK** — kullanıcı
     istemeden oluşturma.
   - **1.0.4.4 için GitHub Release VAR** (bkz. yukarı). Önceki bir not burada
     "release yok" diyordu, bu 21 Eylül 2026'da `gh release list` ile
@@ -628,11 +685,9 @@ Kullanıcının ürettiği iki istek:
 
 ## 8. Mevcut durum + bilinen eksikler / öneriler
 
-- Git HEAD: `7b61dbe` (main) + hemen ardından bir docs commit'i (bu dosya ve
-  DEVAM.md'yi günceller), çalışma ağacı temiz. En yeni sürüm: **1.0.4.6**
-  — **GitHub Release YOK** (yalnızca kod push edildi: `4cf1742` özellikler +
-  `7b61dbe` sürüm/README; release kullanıcı laptopta test edip isteyince
-  açılır). Ders (tekrar): bir sürüm eklerken madde 4, 5 VE 8'in hepsi
+- En yeni sürüm: **1.0.4.7** (hata düzeltmeleri; dal
+  `claude/project-thread-di8nv3`, PR ile `main`'e) — **GitHub Release YOK**.
+  Öncesi: 1.0.4.6 (`4cf1742` + `7b61dbe` + docs `8b7b235`), o da release'siz. Ders (tekrar): bir sürüm eklerken madde 4, 5 VE 8'in hepsi
   güncellenmeli — bu oturum bu üçünü de güncelledi.
 - Bu `CLAUDE.md` dosyası 1.0.4.3'e kadar (yani epeyce geç) **git'e hiç
   commit'lenmemişti** (yerelde vardı, push edilmemişti) — 1.0.4.3 docs
@@ -662,13 +717,8 @@ Kullanıcının ürettiği iki istek:
       (veri kaybı yok), kullanıcı "Tamir Et" kullanmalı. Bir sonraki
       derlemede bu makinenin `dagitim/son_manifest.json`'ı güncel olacağından
       (bu build onu tazeledi) aynı sorun tekrar YAŞANMAZ.
-   6. **Rezervasyon detayındaki çıkış akışı aynı-gün kuralından yoksun:**
-      `detay_dialog.py` `_odada_cikis`, `CikisTab`'ten bağımsız kendi çıkış
-      modelini işletiyor (aynı borç büyütme mantığı) ama 1.0.4.6'da eklenen
-      "aynı gün girip çıkan misafirin bugünkü gecesi" kuralını içermiyor.
-      Kullanıcıya soruldu; karar sonraki oturumda — isterse bu akış da
-      `_cikisi_uygula`-benzeri tahsil/iade dialoglarını kullanacak (bkz.
-      madde 10 ve DEVAM.md).
+   6. ~~Rezervasyon detayındaki çıkış akışı aynı-gün kuralından yoksun~~ —
+      1.0.4.7'de kapandı (ortak `detay_dialog.cikis_akisi`).
 
 ## 9. Çalışma kuralları (bu projede)
 
@@ -697,9 +747,7 @@ Kullanıcının ürettiği iki istek:
 - Bir sonraki sürüm(ler) için özellik/eksik önceliklendirmesi. **Not:**
   kullanıcı büyük/modern bir arayüz yeniden tasarımını 1.0.4.4'te denedi ve
   beğenmedi, geri aldırdı — tekrar önerilmemeli.
-- **`detay_dialog._odada_cikis` kararı:** aynı-gün (giriş == çıkış) hesabının
-  rezervasyon detayındaki çıkış butonuna da uygulanıp uygulanmayacağı
-  (bkz. madde 8 eksik 6) — kullanıcıdan onay bekliyor.
+- 1.0.4.7'yi Windows'ta gerçek arayüzle elle denemek (bulut testleri offscreen'di).
 - **Herhangi bir makineden devam ederken:** `git pull` sonrası bu dosyayı ve
   `DEVAM.md`'yi oku (madde 4'teki en son sürüm bölümü ve DEVAM.md'nin en
   üstü) — ama release durumu için bu dosyaya değil `gh release list` çıktısına

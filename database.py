@@ -102,8 +102,7 @@ def init_db():
 
         # Bir rezervasyondaki her oda icin ayri satir. Oda bazli giris/cikis,
         # kisi, fiyat ve check-in burada tutulur. Ayni oda bir rezervasyonda
-        # yalnizca bir kez gecebilir (oda degisikliginde ayni rezervasyona
-        # SECOND bir satir eklenmez; eski satir yeni odaya tasinir / bolunur).
+        # birden fazla kez gecebilir (farkli, cakismayan donemlerde; bkz. ix_rez_oda).
         cur.execute("""
             CREATE TABLE IF NOT EXISTS rezervasyon_odalar (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -124,8 +123,14 @@ def init_db():
                 FOREIGN KEY (onceki_ro_id) REFERENCES rezervasyon_odalar(id)
             )
         """)
+        # 1.0.4.7: (rezervasyon_id, oda_id) artık TEKİL değil — aynı misafir aynı
+        # odada iki ayrı dönem kalabilir veya oda değiştirip eski odasına dönebilir
+        # (A -> B -> A). Eski veritabanlarındaki tekil indeks kaldırılır, yerine
+        # yalnızca hız için tekil olmayan bir indeks kurulur. Çakışmayı
+        # repository._musaitlik_sorgusu engeller.
+        cur.execute("DROP INDEX IF EXISTS uk_rez_oda")
         cur.execute(
-            "CREATE UNIQUE INDEX IF NOT EXISTS uk_rez_oda "
+            "CREATE INDEX IF NOT EXISTS ix_rez_oda "
             "ON rezervasyon_odalar (rezervasyon_id, oda_id)"
         )
         # Eski veritabanlarında (1.0.4.2 ve öncesi) bu kolon yoktu: oda değiştirme
