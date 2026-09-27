@@ -96,6 +96,7 @@ def init_db():
                 notlar TEXT DEFAULT '',
                 olusturan_kullanici TEXT,
                 iptal INTEGER DEFAULT 0,
+                iptal_nedeni TEXT,
                 olusturma_tarihi TEXT DEFAULT CURRENT_TIMESTAMP
             )
         """)
@@ -226,6 +227,12 @@ def init_db():
         # hizli bir sekilde fark edip net bir hata mesaji verelim ki bilinçsizce
         # yeni model uzerinde bozuk veri calismasin.
         _rez_kolonlari = [r[1] for r in cur.execute("PRAGMA table_info(rezervasyonlar)").fetchall()]
+        # 1.0.4.7: iptalin nedeni. 'gelmedi' = giriş günü geçtiği halde hiç
+        # check-in yapılmadığı için otomatik iptal (bkz.
+        # repository.gelmeyenleri_otomatik_iptal_et); 'geri_alindi' = otomatik
+        # iptal elle geri alındı (bir daha otomatik iptal edilmez).
+        if _rez_kolonlari and "iptal_nedeni" not in _rez_kolonlari:
+            cur.execute("ALTER TABLE rezervasyonlar ADD COLUMN iptal_nedeni TEXT")
         if _rez_kolonlari and "oda_id" in _rez_kolonlari:
             raise RuntimeError(
                 "Bu veritabani eski (tek odali) modele ait. Yeni model "

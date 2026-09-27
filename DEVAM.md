@@ -14,8 +14,12 @@ kişinin bildirilmesi, konaklamış rezervasyonun iptal edilememesi, ileri
 tarihli check-in/çıkış engeli, detaydaki Çıkış butonunun ortak
 `cikis_akisi` ile aynı gün tahsil/iade kuralını kullanması (önceki oturumdan
 kalan açık soru kapandı). `uk_rez_oda` tekil indeksi kaldırıldı (aynı oda iki
-dönem, A→B→A). Yeni kalıcı test: `hata_duzeltme_test.py`. Sonraki adım:
-Windows'ta gerçek arayüzle elle deneme; release kullanıcı isterse.
+dönem, A→B→A). Yeni kalıcı test: `hata_duzeltme_test.py`. Kullanıcının ek isteğiyle günlük
+bakım (`repository.gunluk_bakim`, açılışta + her yenilemede): giriş günü geçip
+hiç check-in olmayan rezervasyon `iptal_nedeni='gelmedi'` ile otomatik iptal
+(geri alınırsa `'geri_alindi'`, bir daha dokunulmaz); planlı çıkışı geçmiş
+çıkışsız satır planlı çıkışla kapanır; Erken Çıkış yalnızca içeridekiler.
+Sonraki adım: Windows'ta gerçek arayüzle elle deneme; release kullanıcı isterse.
 
 ## DEVAM (21 Eylül 2026) — Temizlik/arıza çift tıklama + aynı gün giriş-çıkış hesabı (1.0.4.6, Release YOK)
 

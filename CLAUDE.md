@@ -590,6 +590,18 @@ izin verdi. Düzeltmeler:
   `oda_degistir_kbs_test.py` geçti; bulut oturumunun offscreen arayüz testleri
   (`/mnt/project-files/inceleme/testler/`) yakalanmamış hata olmadan geçti.
   Windows'ta gerçek arayüzle elle deneme henüz yapılmadı.
+- **Günlük bakım (kullanıcının ek isteği — "4 ay önceki rezervasyon Erken
+  Çıkış'ta duruyor"):** `rezervasyonlar`'a `iptal_nedeni` kolonu (otomatik
+  migrasyon). `repository.gunluk_bakim()` (`AnaPencere` açılışında ve
+  `_tumunu_yenile`'de) iki iş yapar: `gelmeyenleri_otomatik_iptal_et` — tüm
+  odalarının giriş günü geçmiş ve hiç check-in yapılmamış rezervasyonu
+  `iptal=1, iptal_nedeni='gelmedi'` yapar (etiket "Gelmedi (Otomatik İptal)",
+  Gelmedi filtresinde ve no-show istatistiğinde sayılır, iptal gecesine
+  sayılmaz; iptali geri alınırsa `'geri_alindi'` olur ve bir daha otomatik
+  iptal edilmez); `suresi_gecmis_konaklamalari_kapat` — check-in'li, çıkışsız
+  ve planlı çıkışı geçmiş satırı planlı çıkış tarihiyle kapatır (oda durumu ve
+  ödemeler değişmez). `erken_cikis_adaylari` artık yalnızca planlı çıkışı
+  seçili günden SONRA olan içerideki misafirleri döndürür.
 
 ---
 

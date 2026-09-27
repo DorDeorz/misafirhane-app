@@ -144,7 +144,12 @@ YENILIKLER = {
                 "dönemle kaydedilebilir, misafir eski odasına geri taşınabilir. "
                 "Temizlikte/arızalı oda ileri tarihli rezervasyona açık. Kendi "
                 "hesabını / son aktif kullanıcıyı pasif yapma engellendi; 'İ' ile "
-                "yazılan kullanıcı adları küçük harfle de girilebilir.",
+                "yazılan kullanıcı adları küçük harfle de girilebilir. Giriş günü "
+                "geçip hiç gelmeyen rezervasyon ertesi gün otomatik iptal edilir "
+                "('Gelmedi (Otomatik İptal)'; iptali geri alınırsa bir daha "
+                "dokunulmaz). Çıkışı unutulan kalış planlı çıkış tarihiyle otomatik "
+                "kapatılır. Erken Çıkış listesi yalnızca şu an misafirhanede "
+                "kalanları gösterir.",
 }
 
 

@@ -184,6 +184,34 @@ ry, roy = rez(11, 0, 1, "Yab", kisi=2)
 R.odasi_misafirleri_kaydet_ve_checkin(roy, [dict(YAB, tc_no="AB123456789"), dict(YAB, tc_no="99123456780")])
 kontrol(R.rezervasyonlar_yabanci_sayilari([ry]).get(ry) == 2, "rakam içeren pasaport ve YKN yabancı sayılır")
 
+print("Günlük bakım: gelmeyenler ve unutulmuş çıkışlar")
+rg, rog = rez(1, -3, 2, "Gelmeyen")
+rgb, _ = rez(5, 0, 2, "Bugun Gelecek")
+rgg, _ = rez(7, -4, 1, "Geri Alinan")
+rco = R.rezervasyon_olustur([dict(oda_id=O[10], giris_tarihi=g(-2), gece_sayisi=3, kisi_sayisi=1, fiyat_tipi="Sabit"),
+                             dict(oda_id=O[13], giris_tarihi=g(-2), gece_sayisi=3, kisi_sayisi=1, fiyat_tipi="Sabit")],
+                            "Cok Odali Yarim", gecmis_kontrol=False)
+R.odasi_misafirleri_kaydet_ve_checkin(R.rezervasyon_odalar_listele(rco)[0]["id"],
+                                      [dict(YER, ad_soyad="Cok Oda", tc_no="10000000146")])
+rs, ros = rez(14, -5, 2, "Cikisi Unutulan")
+R.odasi_misafirleri_kaydet_ve_checkin(ros, [dict(YER, ad_soyad="Unutulan", tc_no="10000000146")])
+kontrol([x["rezervasyon_id"] for x in R.erken_cikis_adaylari(g(0)) if x["id"] == ros] == [],
+        "planlı çıkışı geçmiş kalış Erken Çıkış'ta görünmez")
+R.gelmeyenleri_otomatik_iptal_et()
+R.rezervasyon_iptal_geri_al(rgg)
+R.gunluk_bakim()
+def rez_satir(rid):
+    return database.get_connection().execute("SELECT iptal, iptal_nedeni FROM rezervasyonlar WHERE id=?", (rid,)).fetchone()
+kontrol(tuple(rez_satir(rg)) == (1, "gelmedi"), "giriş günü geçen, gelmeyen rezervasyon otomatik iptal edilir")
+kontrol(rez_satir(rgb)["iptal"] == 0, "giriş günü bugün olan rezervasyon iptal edilmez")
+kontrol(tuple(rez_satir(rgg)) == (0, "geri_alindi"), "elle geri alınan otomatik iptal bir daha iptal edilmez")
+kontrol(rez_satir(rco)["iptal"] == 0, "odalarından biri check-in yapmış çok odalı rezervasyon iptal edilmez")
+etiket = next(r["durum_etiket"] for r in R.rezervasyon_listesi("hepsi") if r["id"] == rg)
+kontrol(etiket.startswith("Gelmedi"), "otomatik iptal 'Gelmedi' etiketiyle görünür")
+kapali = database.get_connection().execute("SELECT cikis_tarihi FROM rezervasyon_odalar WHERE id=?", (ros,)).fetchone()[0]
+kontrol(kapali == g(-3), "çıkışı unutulan kalış planlı çıkış tarihiyle kapatılır")
+kontrol(R.gunluk_bakim() == (0, 0), "bakım ikinci kez çalışınca bir şey değiştirmez")
+
 print("Kullanıcılar")
 auth.kullanici_ekle("İSMAİL", "1234")
 kontrol(auth.kullanici_dogrula("ismail", "1234") is not None, "'İSMAİL' hesabına 'ismail' ile girilebilir")

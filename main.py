@@ -1299,9 +1299,11 @@ class RezervasyonYonetimiTab(QWidget):
     def _satirlari_getir(self, limit=None):
         durum = self._durum_kodu()
         if durum == "gelmedi":
-            # En az bir odası no-show (gelmedi) olanlar
-            rows = [r for r in repository.rezervasyon_listesi("aktif")
-                    if (r["gelmedi_odasi"] or 0) > 0]
+            # Otomatik iptal edilen gelmeyenler + (çok odalıda) en az bir odası
+            # gelmemiş aktif rezervasyonlar
+            rows = [r for r in repository.rezervasyon_listesi("hepsi")
+                    if r["iptal_nedeni"] == "gelmedi"
+                    or (not r["iptal"] and (r["gelmedi_odasi"] or 0) > 0)]
         else:
             rows = repository.rezervasyon_listesi(durum)
 
@@ -2004,9 +2006,8 @@ class CikisTab(QWidget):
         layout.addWidget(erken_baslik)
 
         erken_aciklama = QLabel(
-            "Şu an konaklayan ama planlı çıkış günü bugün OLMAYAN misafirler (yukarıdaki "
-            "listede zaten yer alanlar burada tekrar gösterilmez). Planlanandan önce çıkmak "
-            "isteyen bir misafiri buradan çıkış yapabilirsin."
+            "Şu an misafirhanede kalan ve planlı çıkışı daha ileri bir gün olan misafirler. "
+            "Planlanandan önce çıkmak isteyen bir misafiri buradan çıkış yapabilirsin."
         )
         erken_aciklama.setWordWrap(True)
         erken_aciklama.setStyleSheet("font-style: italic; font-size: 10px;")
@@ -2489,6 +2490,8 @@ class AnaPencere(QMainWindow):
             olusturan = self.aktif_kullanici["kullanici_adi"]
             loglama.set_aktif_kullanici(olusturan)
 
+        self._gunluk_bakim()
+
         self.oda_durumu_tab = OdaDurumuTab(yenile_callback=self._tumunu_yenile)
         self.gunluk_giris_tab = GunlukGirisTab()
         self.checkin_tab = CheckinTab(yenile_callback=self._tumunu_yenile)
@@ -2542,7 +2545,17 @@ class AnaPencere(QMainWindow):
         )
         dialog.exec()
 
+    def _gunluk_bakim(self):
+        """Gelmeyen rezervasyonları otomatik iptal eder, çıkışı unutulmuş eski
+        konaklamaları kapatır (bkz. repository.gunluk_bakim). Hata olursa
+        uygulamanın açılmasını engellemez."""
+        try:
+            repository.gunluk_bakim()
+        except Exception:
+            pass
+
     def _tumunu_yenile(self):
+        self._gunluk_bakim()
         self.oda_durumu_tab.yenile()
         self.checkin_tab.yenile()
         self.gunluk_giris_tab.yenile()

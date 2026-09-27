@@ -528,7 +528,11 @@ def rezervasyon_iptal_geri_al(rez_id):
                         f"İptal geri alınamaz: {ro['kat_adi']} Oda {ro['oda_no']} bu tarihlerde "
                         f"artık başka bir rezervasyona ait ({isimler})."
                     )
-            cur.execute("UPDATE rezervasyonlar SET iptal=0 WHERE id=?", (rez_id,))
+            # Otomatik "gelmedi" iptali elle geri alındıysa bir daha otomatik
+            # iptal edilmesin (misafir gelmiş ama check-in unutulmuş olabilir).
+            yeni_neden = "geri_alindi" if rez["iptal_nedeni"] == "gelmedi" else None
+            cur.execute("UPDATE rezervasyonlar SET iptal=0, iptal_nedeni=? WHERE id=?",
+                        (yeni_neden, rez_id))
             conn.commit()
             loglama.islem_yaz("rezervasyon_iptal", f"{rez['ad_soyad']} rezervasyonunun (#{rez_id}) iptali geri alındı.")
     except Exception:
@@ -585,7 +589,7 @@ def rezervasyon_listesi(durum="aktif"):
     try:
         q = """
             SELECT r.id, r.ad_soyad, r.tc_no, r.telefon, r.referans, r.notlar,
-                   r.olusturan_kullanici, r.iptal,
+                   r.olusturan_kullanici, r.iptal, r.iptal_nedeni,
                    substr(r.olusturma_tarihi, 1, 16) as olusturma_tarihi,
                    COUNT(ro.id) as oda_sayisi,
                    COALESCE(SUM(ro.kisi_sayisi), 0) as toplam_kisi,
@@ -631,6 +635,8 @@ def rezervasyon_durum_etiketi(d, bugun_str=None):
     if bugun_str is None:
         bugun_str = date.today().isoformat()
     if d["iptal"]:
+        if d.get("iptal_nedeni") == "gelmedi":
+            return "Gelmedi (Otomatik İptal)"
         return "İptal Edildi"
     oda_sayisi = d["oda_sayisi"] or 0
     if oda_sayisi == 0:
@@ -1195,9 +1201,12 @@ def odasi_odenmemis_tutar(ro_id, kesim_tarihi=None):
 
 
 def erken_cikis_adaylari(tarih_str=None):
-    """Şu an fiilen konaklayan (check-in yapılmış, henüz çıkışı yapılmamış) ama
-    planlanan çıkış günü tarih_str OLMAYAN oda satırları — yani 'bugün_cikacaklar'
-    listesinde zaten görünenler HARİÇ, erken (ya da gecikmiş) çıkış adayları."""
+    """tarih_str günü misafirhanede fiilen kalan (check-in yapılmış, çıkışı
+    yapılmamış) ve planlı çıkışı o günden SONRA olan oda satırları — yani erken
+    çıkış adayları. Planlı çıkışı o gün olanlar 'bugun_cikacaklar' listesinde;
+    planlı çıkışı geçmiş (çıkışı unutulmuş) satırlar ise artık burada
+    gösterilmez, günlük bakımda otomatik kapatılır (bkz.
+    suresi_gecmis_konaklamalari_kapat)."""
     tarih_str = tarih_str or date.today().isoformat()
     conn = get_connection()
     try:
@@ -1211,7 +1220,7 @@ def erken_cikis_adaylari(tarih_str=None):
             WHERE r.iptal = 0 AND ro.checkin_yapildi = 1
               AND ro.cikis_tarihi IS NULL
               AND ro.giris_tarihi <= ?
-              AND date(ro.giris_tarihi, '+' || ro.gece_sayisi || ' day') != date(?)
+              AND date(ro.giris_tarihi, '+' || ro.gece_sayisi || ' day') > date(?)
             ORDER BY planli_cikis, o.kat_no, o.oda_no
         """, (tarih_str, tarih_str)).fetchall()
         return rows
@@ -1235,6 +1244,93 @@ def gelmedi_mi(rez_row, bugun_str=None):
             bugun_str = date.today().isoformat()
         return (not rez_row["iptal"]) and (not rez_row["checkin_yapildi"]) and (rez_row["giris_tarihi"] < bugun_str)
     return False
+
+
+# ---------------- GÜNLÜK BAKIM (otomatik iptal / kapatma) ----------------
+
+def gelmeyenleri_otomatik_iptal_et(bugun_str=None):
+    """Giriş günü GEÇMİŞ (tüm odalarının giriş tarihi bugünden önce) ve hiçbir
+    odasına check-in yapılmamış rezervasyonları otomatik iptal eder
+    (iptal_nedeni='gelmedi'). Böylece gelmeyen misafirin odası boşa tutulmaz ve
+    eski kayıtlar listelerde birikmez. Bir otomatik iptal elle geri alındıysa
+    (iptal_nedeni='geri_alindi') o rezervasyon bir daha iptal edilmez.
+    Çok odalı rezervasyonda odalardan biri bile check-in yaptıysa ya da bir
+    odanın giriş günü henüz gelmediyse dokunulmaz. Döner: iptal edilen sayı."""
+    bugun = bugun_str or date.today().isoformat()
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        adaylar = cur.execute("""
+            SELECT r.id, r.ad_soyad, MIN(ro.giris_tarihi) as giris
+            FROM rezervasyonlar r
+            JOIN rezervasyon_odalar ro ON ro.rezervasyon_id = r.id
+            WHERE r.iptal = 0 AND COALESCE(r.iptal_nedeni, '') != 'geri_alindi'
+            GROUP BY r.id
+            HAVING SUM(CASE WHEN ro.checkin_yapildi = 1 THEN 1 ELSE 0 END) = 0
+               AND MAX(ro.giris_tarihi) < ?
+        """, (bugun,)).fetchall()
+        for a in adaylar:
+            cur.execute("UPDATE rezervasyonlar SET iptal=1, iptal_nedeni='gelmedi' WHERE id=?", (a["id"],))
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+    for a in adaylar:
+        loglama.islem_yaz(
+            "rezervasyon_iptal",
+            f"{a['ad_soyad']} rezervasyonu (#{a['id']}) giriş günü ({a['giris']}) gelmediği "
+            "için otomatik iptal edildi.",
+            kullanici="sistem",
+        )
+    return len(adaylar)
+
+
+def suresi_gecmis_konaklamalari_kapat(bugun_str=None):
+    """Check-in yapılmış ama planlı çıkış günü GEÇMİŞ olduğu halde çıkışı hiç
+    işlenmemiş (unutulmuş) oda satırlarını planlı çıkış tarihiyle kapatır.
+    Odanın doluluğu zaten planlı çıkışta bitiyordu (takvim/çakışma hesapları
+    bunu kullanır); bu yalnızca kaydı resmîleştirir: satır Erken Çıkış
+    listesinde 'hâlâ içeride' gibi görünmez, rezervasyon Geçmiş Kayıtlar'a
+    düşer ve KBS'de çıkış bildirimi üretilir. Oda durumuna (temiz/temizlikte)
+    dokunulmaz, ödeme kayıtları değişmez. Döner: kapatılan satır sayısı."""
+    bugun = bugun_str or date.today().isoformat()
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        satirlar = cur.execute("""
+            SELECT ro.id, r.ad_soyad, o.kat_adi, o.oda_no,
+                   date(ro.giris_tarihi, '+' || ro.gece_sayisi || ' day') as planli_cikis
+            FROM rezervasyon_odalar ro
+            JOIN rezervasyonlar r ON r.id = ro.rezervasyon_id
+            JOIN odalar o ON o.id = ro.oda_id
+            WHERE r.iptal = 0 AND ro.checkin_yapildi = 1
+              AND (ro.cikis_tarihi IS NULL OR ro.cikis_tarihi = '')
+              AND date(ro.giris_tarihi, '+' || ro.gece_sayisi || ' day') < date(?)
+        """, (bugun,)).fetchall()
+        for s in satirlar:
+            cur.execute("UPDATE rezervasyon_odalar SET cikis_tarihi=? WHERE id=?",
+                        (s["planli_cikis"], s["id"]))
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+    for s in satirlar:
+        loglama.islem_yaz(
+            "cikis",
+            f"{s['kat_adi']} Oda {s['oda_no']} (satır #{s['id']}, {s['ad_soyad']}): çıkışı "
+            f"işlenmemişti, planlı çıkış tarihiyle ({s['planli_cikis']}) otomatik kapatıldı.",
+            kullanici="sistem",
+        )
+    return len(satirlar)
+
+
+def gunluk_bakim():
+    """Uygulama açılışında ve her genel yenilemede çağrılır."""
+    return gelmeyenleri_otomatik_iptal_et(), suresi_gecmis_konaklamalari_kapat()
 
 
 # ---------------- GÜNLÜK GÖRÜNÜMLER ----------------
@@ -1729,7 +1825,7 @@ def aylik_istatistik(ay, yil):
             SELECT COALESCE(SUM(ro.gece_sayisi), 0) as geceler
             FROM rezervasyonlar r
             LEFT JOIN rezervasyon_odalar ro ON ro.rezervasyon_id = r.id
-            WHERE r.iptal = 1
+            WHERE r.iptal = 1 AND COALESCE(r.iptal_nedeni, '') != 'gelmedi'
               AND substr(r.olusturma_tarihi, 1, 10) >= ? AND substr(r.olusturma_tarihi, 1, 10) <= ?
         """, (ay_bas, ay_son)).fetchone()["geceler"]
 
@@ -1738,7 +1834,7 @@ def aylik_istatistik(ay, yil):
             SELECT COALESCE(SUM(ro.gece_sayisi), 0) as geceler
             FROM rezervasyon_odalar ro
             JOIN rezervasyonlar r ON ro.rezervasyon_id = r.id
-            WHERE r.iptal = 0 AND ro.checkin_yapildi = 0
+            WHERE (r.iptal = 0 OR r.iptal_nedeni = 'gelmedi') AND ro.checkin_yapildi = 0
               AND substr(ro.giris_tarihi, 1, 7) = ? AND substr(ro.giris_tarihi, 1, 10) <= date('now', 'localtime')
         """, (ay_ilk_yedi,)).fetchone()["geceler"]
 

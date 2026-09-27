@@ -57,7 +57,9 @@ def rezervasyonlari_disa_aktar(dosya_yolu, durum="aktif", satirlar=None):
 
     rows = satirlar if satirlar is not None else repository.rezervasyon_listesi(durum)
     if satirlar is None and durum == "gelmedi":
-        rows = [r for r in rows if (r["gelmedi_odasi"] or 0) > 0]
+        rows = [r for r in repository.rezervasyon_listesi("hepsi")
+                if r["iptal_nedeni"] == "gelmedi"
+                or (not r["iptal"] and (r["gelmedi_odasi"] or 0) > 0)]
     ozet = repository.rezervasyonlari_toplam_ozeti([r["id"] for r in rows]) if rows else {}
     for r in rows:
         o = ozet.get(r["id"]) or {}
