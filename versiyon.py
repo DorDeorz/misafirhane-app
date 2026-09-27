@@ -5,7 +5,7 @@
 Her sürümde SURUM arttirilir; guncelleme aracı ve kurulum paketi bu değeri kullanır."""
 
 UYGULAMA_ADI = "Misafirhane Rezervasyon"
-SURUM = "1.0.4.7"
+SURUM = "1.0.5"
 
 YENILIKLER = {
     "1.0.0": "İlk yayın sürümü. Rezervasyon, oda durumu, takvim, rapor ve yedekleme.",
@@ -151,6 +151,16 @@ YENILIKLER = {
                 "kapatılır. Erken Çıkış listesi yalnızca şu an misafirhanede "
                 "kalanları gösterir. Arızalı/temizlikte odayı temize çekerken "
                 "yaşanan birkaç saniyelik donma giderildi.",
+    "1.0.5": "Kasa / Borçlar penceresi: gün sonu kasa raporu (o gün tahsil edilenler, "
+             "ödeme şekline ve tahsil edene göre toplamlar, Excel) ve açık borçlar "
+             "listesi (kalınmış ama ödenmemiş geceler, tek tıkla tahsilat). Tekrar "
+             "gelen misafir: telefon girilince önceki konaklamalar gösterilir, ad "
+             "otomatik dolar. Misafir kartı: misafirin bütün konaklamalarında görünen "
+             "not ve 'sorunlu misafir' uyarısı. Rezervasyon detayından PDF hesap "
+             "dökümü. Açılışta günün özeti (girişler, çıkışlar, boş odalar, fatura, "
+             "borç, KBS). İstatistik: doluluk oranı, ortalama gecelik fiyat, ortalama "
+             "kalış, önceki ay ve geçen yılla karşılaştırma, ödeme şekli ve referans "
+             "dağılımı.",
 }
 
 

@@ -199,3 +199,33 @@ def tarih_araligi_raporu_disa_aktar(dosya_yolu, baslangic_str, bitis_str):
 
     wb.save(dosya_yolu)
     return toplam_gun_sayisi
+
+
+def gun_sonu_kasa_disa_aktar(dosya_yolu, tarih_str):
+    """Gün sonu kasa raporunu (o gün tahsil edilen geceler + ödeme şekli ve
+    tahsil edene göre toplamlar) Excel'e yazar. Döner: satır sayısı."""
+    kasa = repository.gun_sonu_kasa(tarih_str)
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Gün Sonu Kasa"
+    _baslik_satiri_yaz(ws, ["Saat", "Oda", "Misafir", "Gece", "Tutar (TL)",
+                            "Ödeme Şekli", "Tahsil Eden", "Not"])
+    for r in kasa["satirlar"]:
+        ws.append([
+            (r["tahsil_zamani"] or "")[11:16], f"{r['kat_adi']} - Oda {r['oda_no']}",
+            _guvenli_hucre(r["ad_soyad"]), r["gece"], r["tutar"],
+            r["odeme_sekli"] or "", r["tahsil_eden"] or "", _guvenli_hucre(r["odeme_notu"] or ""),
+        ])
+    ws.append([])
+    ws.append(["", "", "TOPLAM", "", kasa["toplam"]])
+    ws.cell(row=ws.max_row, column=3).font = Font(bold=True)
+    ws.cell(row=ws.max_row, column=5).font = Font(bold=True)
+    for sekil, tutar in sorted(kasa["sekiller"].items()):
+        ws.append(["", "", sekil, "", tutar])
+    ws.append([])
+    for kisi, tutar in sorted(kasa["kullanicilar"].items()):
+        ws.append(["", "", f"Tahsil eden: {kisi}", "", tutar])
+    for col_letter, genislik in zip("ABCDEFGH", [7, 18, 26, 12, 12, 14, 14, 30]):
+        ws.column_dimensions[col_letter].width = genislik
+    wb.save(dosya_yolu)
+    return len(kasa["satirlar"])

@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (
     QTabWidget, QLabel, QPushButton, QTableWidget, QTableWidgetItem,
     QDateEdit, QComboBox, QLineEdit, QSpinBox, QFormLayout, QMessageBox,
     QHeaderView, QGroupBox, QDialog, QDialogButtonBox, QInputDialog,
-    QFileDialog, QSplitter, QGridLayout, QFrame, QAbstractItemView
+    QFileDialog, QSplitter, QGridLayout, QFrame, QAbstractItemView, QCheckBox
 )
 from PySide6.QtCore import Qt, QDate, QTimer
 from PySide6.QtGui import QColor, QIcon
@@ -722,6 +722,15 @@ class YeniRezervasyonTab(QWidget):
         self.notlar.setPlaceholderText("Opsiyonel — TC No check-in ekranında girilir")
         form.addWidget(self.notlar, 3, 1)
         form.setColumnStretch(1, 1)
+
+        # 1.0.5: tekrar gelen misafir / misafir notu — telefon girilince dolar
+        self.misafir_bilgi = QLabel("")
+        self.misafir_bilgi.setWordWrap(True)
+        self.misafir_bilgi.setTextFormat(Qt.RichText)
+        self.misafir_bilgi.setVisible(False)
+        form.addWidget(self.misafir_bilgi, 4, 0, 1, 2)
+        self.telefon.editingFinished.connect(self._misafiri_tani)
+        self._misafir_sorunlu = False
         form_kutu.setLayout(form)
         sag_lay.addWidget(form_kutu)
 
@@ -920,6 +929,9 @@ class YeniRezervasyonTab(QWidget):
         self.telefon.clear()
         self.referans.clear()
         self.notlar.clear()
+        self.misafir_bilgi.clear()
+        self.misafir_bilgi.setVisible(False)
+        self._misafir_sorunlu = False
         self.toplam_kisi.setValue(0)
         self.oda_filtre_kisi.setValue(0)
         self.secim_kisi.setValue(1)
@@ -929,6 +941,37 @@ class YeniRezervasyonTab(QWidget):
         self._dagitim_durumunu_guncelle()
         self._tutar_ozetini_guncelle()
         self.ekle_btn.setEnabled(False)
+
+    def _misafiri_tani(self):
+        """Telefon girilince aynı numarayla önceki konaklamaları ve misafir
+        kartını (not / sorunlu uyarısı) gösterir; ad boşsa son kayıttaki adla
+        doldurur."""
+        telefon = self.telefon.text().strip()
+        self._misafir_sorunlu = False
+        try:
+            gecmis = repository.misafir_gecmisi(telefon=telefon)
+            kart = repository.misafir_karti_getir(telefon=telefon)
+        except Exception:
+            gecmis, kart = [], None
+        parcalar = []
+        if gecmis:
+            son = gecmis[0]
+            parcalar.append(
+                f"🔁 <b>Tekrar gelen misafir:</b> {len(gecmis)} konaklama, son {son['giris']} → "
+                f"{son['cikis']} (Oda {son['odalar']}, {son['ad_soyad']})")
+            if not self.ad_soyad.text().strip():
+                self.ad_soyad.setText(son["ad_soyad"])
+        stil = "color: #1e6f3e; background-color: #e3f4e8;"
+        if kart:
+            if kart["sorunlu"]:
+                self._misafir_sorunlu = True
+                stil = "color: #922b21; background-color: #f8d0d0; font-weight: 600;"
+                parcalar.append(f"⚠ <b>Sorunlu misafir:</b> {kart['notu'] or '(not yok)'}")
+            elif kart["notu"]:
+                parcalar.append(f"📝 Not: {kart['notu']}")
+        self.misafir_bilgi.setText("<br>".join(parcalar))
+        self.misafir_bilgi.setStyleSheet(stil + " padding: 4px 6px; border-radius: 5px;")
+        self.misafir_bilgi.setVisible(bool(parcalar))
 
     def kaydet(self):
         secilenler = self.grid.kilitli_listesi()
@@ -947,6 +990,17 @@ class YeniRezervasyonTab(QWidget):
                 "Telefon numarası geçerli görünmüyor. Örn: 0532 123 45 67 veya 05321234567."
             )
             return
+
+        self._misafiri_tani()
+        if self._misafir_sorunlu:
+            cevap = QMessageBox.question(
+                self, "Sorunlu Misafir",
+                "Bu telefon numarası 'sorunlu misafir' olarak işaretli.\n"
+                "Yine de rezervasyonu kaydetmek istiyor musun?",
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.No
+            )
+            if cevap == QMessageBox.No:
+                return
 
         toplam = self.toplam_kisi.value()
         if toplam > 0:
@@ -2140,6 +2194,19 @@ class IstatistikTab(QWidget):
     AY_ADLARI = ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran",
                  "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"]
 
+    # (başlık, anahtar, birim) — birim: "tl", "%" veya ""
+    METRIKLER = [
+        ("Rezervasyon adedi (o ayda girişli)", "rez_adedi", ""),
+        ("Satılan gece (o aya düşen oda-gece)", "satilan_gece", ""),
+        ("Doluluk oranı", "doluluk", "%"),
+        ("Satış değeri", "gelir", "tl"),
+        ("Tahsil edilen (ödendi)", "tahsilat", "tl"),
+        ("Ortalama gecelik oda fiyatı", "ort_gecelik", "tl"),
+        ("Ortalama kalış (gece)", "ort_kalis", ""),
+        ("İptal gece (o ayda iptal)", "iptal_gece", ""),
+        ("Gelmeyen (no-show) gece", "noshow_gece", ""),
+    ]
+
     def __init__(self):
         super().__init__()
         layout = QVBoxLayout(self)
@@ -2161,16 +2228,41 @@ class IstatistikTab(QWidget):
         layout.addLayout(ust)
 
         self.tablo = QTableWidget()
-        self.tablo.setColumnCount(2)
-        self.tablo.setHorizontalHeaderLabels(["Metrik", "Değer"])
+        self.tablo.setColumnCount(4)
+        self.tablo.setHorizontalHeaderLabels(["Metrik", "Bu ay", "Önceki ay", "Geçen yıl aynı ay"])
         self.tablo.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.tablo.setEditTriggers(QTableWidget.NoEditTriggers)
         tabloyu_kompakt_yap(self.tablo)
         self.tablo.setToolTip(
             "Satışlar, ilgili aya düşen gecelere göre hesaplanır (rezervasyonun tamamı değil, "
-            "sadece o ay içindeki geceler). Tutarlar satış değerini gösterir."
+            "sadece o ay içindeki geceler). Tutarlar satış değerini gösterir. Doluluk, bugünkü "
+            "aktif oda sayısına göre hesaplanır."
         )
-        layout.addWidget(self.tablo, stretch=1)
+        layout.addWidget(self.tablo, stretch=3)
+
+        alt = QHBoxLayout()
+        sekil_kutu = QGroupBox("Tahsilat — ödeme şekline göre (bu ay)")
+        sekil_lay = QVBoxLayout(sekil_kutu)
+        self.sekil_tablo = QTableWidget()
+        self.sekil_tablo.setColumnCount(2)
+        self.sekil_tablo.setHorizontalHeaderLabels(["Ödeme Şekli", "Tutar"])
+        self.sekil_tablo.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.sekil_tablo.setEditTriggers(QTableWidget.NoEditTriggers)
+        tabloyu_kompakt_yap(self.sekil_tablo)
+        sekil_lay.addWidget(self.sekil_tablo)
+        alt.addWidget(sekil_kutu, 2)
+
+        ref_kutu = QGroupBox("Referansa göre (bu ay)")
+        ref_lay = QVBoxLayout(ref_kutu)
+        self.ref_tablo = QTableWidget()
+        self.ref_tablo.setColumnCount(4)
+        self.ref_tablo.setHorizontalHeaderLabels(["Referans", "Rezervasyon", "Gece", "Satış"])
+        self.ref_tablo.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.ref_tablo.setEditTriggers(QTableWidget.NoEditTriggers)
+        tabloyu_kompakt_yap(self.ref_tablo)
+        ref_lay.addWidget(self.ref_tablo)
+        alt.addWidget(ref_kutu, 3)
+        layout.addLayout(alt, stretch=2)
 
         self.hata_etiketi = QLabel("")
         self.hata_etiketi.setStyleSheet("color: #c0392b; font-weight: 600;")
@@ -2179,32 +2271,52 @@ class IstatistikTab(QWidget):
 
         self.hesapla()
 
+    @staticmethod
+    def _bicimle(deger, birim):
+        if deger is None:
+            return "-"
+        if birim == "tl":
+            return f"{deger:,}₺"
+        if birim == "%":
+            return f"%{deger}"
+        return str(deger)
+
+    @staticmethod
+    def _onceki_ay(ay, yil):
+        return (12, yil - 1) if ay == 1 else (ay - 1, yil)
+
     def hesapla(self):
         ay = self.ay_combo.currentIndex() + 1
         yil = self.yil_spin.value()
         try:
-            s = repository.aylik_istatistik(ay, yil)
+            s = repository.aylik_detay_istatistik(ay, yil)
+            onceki = repository.aylik_detay_istatistik(*self._onceki_ay(ay, yil))
+            gecen_yil = repository.aylik_detay_istatistik(ay, yil - 1)
         except Exception as e:
-            s = {}
+            s, onceki, gecen_yil = {}, {}, {}
             self.hata_etiketi.setText(f"⚠ İstatistik hesaplanamadı, aşağıdaki değerler güvenilir değil: {e}")
             self.hata_etiketi.setVisible(True)
             loglama.islem_yaz("hata", f"İstatistik hesaplama hatası ({ay}/{yil}): {e}")
         else:
             self.hata_etiketi.setVisible(False)
-        satirlar = [
-            ("Rezervasyon adedi (o ayda girişli)", s.get("rez_adedi", 0)),
-            ("Satılan gece (o aya düşen)", s.get("satilan_gece", 0)),
-            ("Satış değeri (TL)", s.get("gelir", 0)),
-            ("Tahsil edilen (ödendi, TL)", s.get("tahsilat", 0)),
-            ("İptal gece (o ayda iptal)", s.get("iptal_gece", 0)),
-            ("Gelmeyen (no-show) gece", s.get("noshow_gece", 0)),
-        ]
-        self.tablo.setRowCount(0)
-        for ad, deger in satirlar:
-            row = self.tablo.rowCount()
-            self.tablo.insertRow(row)
+
+        self.tablo.setRowCount(len(self.METRIKLER))
+        for row, (ad, anahtar, birim) in enumerate(self.METRIKLER):
             self.tablo.setItem(row, 0, QTableWidgetItem(ad))
-            self.tablo.setItem(row, 1, QTableWidgetItem(str(deger)))
+            for kol, kaynak in enumerate((s, onceki, gecen_yil), start=1):
+                self.tablo.setItem(row, kol, QTableWidgetItem(self._bicimle(kaynak.get(anahtar, 0), birim)))
+
+        sekiller = s.get("tahsilat_sekilleri", [])
+        self.sekil_tablo.setRowCount(len(sekiller))
+        for row, (sekil, tutar) in enumerate(sekiller):
+            self.sekil_tablo.setItem(row, 0, QTableWidgetItem(sekil))
+            self.sekil_tablo.setItem(row, 1, QTableWidgetItem(f"{tutar:,}₺"))
+
+        referanslar = s.get("referanslar", [])
+        self.ref_tablo.setRowCount(len(referanslar))
+        for row, r in enumerate(referanslar):
+            for kol, deger in enumerate((r["referans"], r["rez"], r["gece"], f"{r['tutar']:,}₺")):
+                self.ref_tablo.setItem(row, kol, QTableWidgetItem(str(deger)))
 
 
 # ============================================================
@@ -2276,8 +2388,24 @@ class AyarlarTab(QWidget):
         tema_dikey.addStretch(1)
         tema_kutu.setLayout(tema_dikey)
 
+        genel_kutu = QGroupBox("Genel")
+        genel_form = QFormLayout()
+        self.tesis_adi = QLineEdit(database.get_ayar("tesis_adi", "") or "")
+        self.tesis_adi.setPlaceholderText("Misafirhane")
+        self.tesis_adi.setToolTip("Hesap dökümünün (PDF) başlığında yazar.")
+        self.tesis_adi.editingFinished.connect(
+            lambda: database.set_ayar("tesis_adi", self.tesis_adi.text().strip()))
+        genel_form.addRow("Tesis adı:", self.tesis_adi)
+        self.ozet_goster = QCheckBox("Açılışta günün özetini göster")
+        self.ozet_goster.setChecked(database.get_ayar("acilis_ozeti", "1") != "0")
+        self.ozet_goster.toggled.connect(
+            lambda secili: database.set_ayar("acilis_ozeti", "1" if secili else "0"))
+        genel_form.addRow(self.ozet_goster)
+        genel_kutu.setLayout(genel_form)
+
         tema_sag = QVBoxLayout()
         tema_sag.addWidget(tema_kutu)
+        tema_sag.addWidget(genel_kutu)
         tema_sag.addStretch(1)
 
         ust_izgara = QGridLayout()
@@ -2493,6 +2621,69 @@ class GelmeyenlerDialog(QDialog):
         return iptal, birak
 
 
+class GunOzetiDialog(QDialog):
+    """Açılışta (ve 'Günün Özeti' butonuyla) gösterilen kısa özet. secim:
+    kullanıcının açmak istediği pencere ('borc' / 'kbs') ya da None."""
+
+    def __init__(self, ozet, kbs_ozet=None, parent=None):
+        super().__init__(parent)
+        self.secim = None
+        tarih = datetime.strptime(ozet["tarih"], "%Y-%m-%d").strftime("%d.%m.%Y")
+        self.setWindowTitle(f"Günün Özeti - {tarih}")
+        self.setMinimumWidth(460)
+        lay = QVBoxLayout(self)
+
+        izgara = QGridLayout()
+        izgara.setHorizontalSpacing(18)
+        izgara.setVerticalSpacing(6)
+        satirlar = [
+            ("🔑 Bugün beklenen giriş",
+             f"{ozet['giris_bekleyen']} oda" + (f" (toplam {ozet['giris_toplam']}, gelenler hariç)"
+                                                if ozet['giris_toplam'] != ozet['giris_bekleyen'] else "")),
+            ("🚪 Bugün çıkacak", f"{ozet['cikis_bekleyen']} oda"),
+            ("🛏 İçeride / dolu", f"{ozet['dolu_oda']} oda"),
+            ("✨ Boş ve temiz", f"{ozet['bos_temiz']} oda"
+             + (f" · temizlikte {ozet['bos_temizlikte']}" if ozet['bos_temizlikte'] else "")
+             + (f" · arızalı {ozet['bos_arizali']}" if ozet['bos_arizali'] else "")),
+            ("🧾 Fatura bekleyen", f"{ozet['fatura_bekleyen']} oda"),
+            ("⏳ Açık borç", f"{ozet['borc_toplam']:,}₺ ({ozet['borc_adedi']} oda)"
+             if ozet['borc_adedi'] else "Yok"),
+        ]
+        if kbs_ozet is not None:
+            satirlar.append(("🛂 KBS bekleyen", f"{kbs_ozet['giris_bekleyen']} giriş, "
+                                               f"{kbs_ozet['cikis_bekleyen']} çıkış"))
+        for i, (ad, deger) in enumerate(satirlar):
+            izgara.addWidget(QLabel(ad), i, 0)
+            etiket = QLabel(f"<b>{deger}</b>")
+            izgara.addWidget(etiket, i, 1)
+        lay.addLayout(izgara)
+
+        butonlar = QHBoxLayout()
+        for metin, secim, gorunur in (
+            ("⏳ Borçları Aç", "borc", ozet["borc_adedi"] > 0),
+            ("🛂 KBS'yi Aç", "kbs", bool(kbs_ozet and kbs_ozet["toplam_bekleyen"])),
+        ):
+            if gorunur:
+                b = QPushButton(metin)
+                b.setObjectName("ikincil")
+                b.clicked.connect(lambda _=False, s=secim: self._sec(s))
+                butonlar.addWidget(b)
+        butonlar.addStretch(1)
+        tamam = QPushButton("Tamam")
+        tamam.setObjectName("birincil")
+        tamam.clicked.connect(self.accept)
+        butonlar.addWidget(tamam)
+        lay.addLayout(butonlar)
+
+        ipucu = QLabel("Açılışta gösterilmesini Ayarlar > Genel'den kapatabilirsin.")
+        ipucu.setStyleSheet("color: #777; font-size: 10px;")
+        lay.addWidget(ipucu)
+
+    def _sec(self, secim):
+        self.secim = secim
+        self.accept()
+
+
 class AnaPencere(QMainWindow):
     def __init__(self, aktif_kullanici=None, cikis_callback=None):
         super().__init__()
@@ -2540,6 +2731,15 @@ class AnaPencere(QMainWindow):
             "listeler ve Excel olarak çıkarır. Gönderildi işaretlenenler bir daha görünmez.")
         kbs_btn.clicked.connect(self.kbs_penceresini_ac)
         ust_bar.addWidget(kbs_btn)
+
+        kasa_btn = QPushButton("💰 Kasa / Borçlar")
+        kasa_btn.setToolTip("Gün sonu kasa raporu (bugün tahsil edilenler) ve açık borçlar listesi.")
+        kasa_btn.clicked.connect(self.kasa_penceresini_ac)
+        ust_bar.addWidget(kasa_btn)
+
+        ozet_btn = QPushButton("📋 Günün Özeti")
+        ozet_btn.clicked.connect(self.gunun_ozetini_goster)
+        ust_bar.addWidget(ozet_btn)
         ana_layout.addWidget(ust_cubuk)
 
         self.tabs = QTabWidget()
@@ -2554,7 +2754,7 @@ class AnaPencere(QMainWindow):
         self._gunluk_bakim()
         self._gelmeyen_soruluyor = False
         self._gelmeyen_ertelenen = set()
-        QTimer.singleShot(0, self._gelmeyenleri_sor)
+        QTimer.singleShot(0, self._acilis_akisi)
 
         self.oda_durumu_tab = OdaDurumuTab(yenile_callback=self._tumunu_yenile)
         self.gunluk_giris_tab = GunlukGirisTab()
@@ -2608,6 +2808,36 @@ class AnaPencere(QMainWindow):
             parent=self,
         )
         dialog.exec()
+
+    def kasa_penceresini_ac(self, sekme=0):
+        from kasa_pencere import KasaPenceresi
+        KasaPenceresi(self, yenile_callback=self._tumunu_yenile, baslangic_sekmesi=sekme).exec()
+
+    def gunun_ozetini_goster(self):
+        try:
+            ozet = repository.gunun_ozeti()
+        except Exception as e:
+            QMessageBox.warning(self, "Hata", f"Günün özeti hazırlanamadı: {e}")
+            return
+        try:
+            import kbs
+            kbs_ozet = kbs.kbs_durum_ozet(
+                database.DB_PATH, os.path.join(database.VERI_KLASORU, "kbs_takip.db"))
+        except Exception:
+            kbs_ozet = None
+        dlg = GunOzetiDialog(ozet, kbs_ozet, self)
+        dlg.exec()
+        if dlg.secim == "borc":
+            self.kasa_penceresini_ac(1)
+        elif dlg.secim == "kbs":
+            self.kbs_penceresini_ac()
+
+    def _acilis_akisi(self):
+        """Açılışta önce gelmeyen rezervasyonlar sorulur, sonra (Ayarlar'dan
+        kapatılmadıysa) günün özeti gösterilir."""
+        self._gelmeyenleri_sor()
+        if database.get_ayar("acilis_ozeti", "1") != "0":
+            self.gunun_ozetini_goster()
 
     def _gunluk_bakim(self):
         """Çıkışı unutulmuş eski konaklamaları kapatır (bkz.
