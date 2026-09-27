@@ -3,7 +3,16 @@
 Bu dosya, evdeki masaüstü bilgisayardaki opencode oturumunun kaldığı yerden devam
 edebilmesi için hazırlandı. İlk iş olarak okuyun.
 
-## DEVAM (27 Eylül 2026) — Yeni özellikler (1.0.5, Release YOK)
+## DEVAM (27 Eylül 2026) — Release v1.0.5 açıldı
+
+1.0.4.7 + 1.0.5 `main`'e birleşti (075a9be). Ev masaüstünde elle denendi
+(çıkışta çift tıkla tahsil eklendi), testler geçti, derlendi ve **Release
+v1.0.5** açıldı: https://github.com/DorDeorz/misafirhane-app/releases/tag/v1.0.5
+(Kurulumu 47,2 MB + Guncelleme 13,9 MB + Standalone 54,2 MB). Güncelleme
+exe'si yalnızca 1.0.4.5'ten günceller (`onceki_surum`); başka sürümde
+Kurulum Aracı → "Tamir Et". README ekran görüntüleri maskeli (telefon/TC).
+
+## DEVAM (27 Eylül 2026) — Yeni özellikler (1.0.5)
 
 Kullanıcının seçtiği öneriler eklendi (ayrıntı: `CLAUDE.md` madde 4 "1.0.5"):
 💰 Kasa / Borçlar penceresi (gün sonu kasa + açık borçlar), tekrar gelen

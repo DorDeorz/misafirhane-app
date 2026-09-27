@@ -614,7 +614,8 @@ izin verdi. Düzeltmeler:
   `islem_yaz` asla açık bir yazma işlemi içinde çağrılmamalı.
 
 ### 1.0.5 (dal `claude/project-thread-qapk35`, 1.0.4.7 dalının ÜSTÜNE, bulut
-oturumunda Claude Code ile yapıldı, PR ile gönderildi — **Release YOK**)
+oturumunda Claude Code ile yapıldı, PR #1/#2/#3/#4 ile `main`'e birleşti —
+**Release v1.0.5 VAR**, ev masaüstünde derlenip açıldı, bkz. aşağı ve madde 5)
 
 Kullanıcı özellik önerisi istedi; sunulan 9 öneriden şunları seçti: gün sonu
 kasa raporu, açık borçlar, tekrar gelen misafir + misafir notu, PDF hesap
@@ -674,7 +675,18 @@ değiştiriliyor, sezonluk fiyat yok).
 - **Test:** yeni kalıcı `yeni_ozellik_test.py` (iş katmanı + offscreen arayüz
   açılışı, 45+ kontrol) geçti; `hata_duzeltme_test.py`, `kbs_test.py`,
   `oda_degistir_kbs_test.py` ve `/mnt/project-files/inceleme/testler/` geçti.
-  Windows'ta gerçek arayüzle elle deneme henüz yapılmadı.
+- **Windows denemesi + Release (27 Eylül 2026, ev masaüstü):** kullanıcı
+  1.0.5'i `test_verisi_105.py %TEMP%\opencode\test_105 --ac` ile elle denedi;
+  isteği üzerine Çıkış'ta çift tıkla tahsil + çıkış eklendi (c3e4a7b).
+  README ekran görüntülerinde (`docs/ekran/`) telefonlar `0555 555 55 55`,
+  TC'ler `11111111111` olarak maskelendi (yalnızca görüntüde; veri değil).
+  `main` (075a9be) üzerinde 4 test dosyası geçti; `guncelleme_olustur.py --tam`
+  + Kurulum Aracı + Standalone derlendi (Kurulum Aracı ve Standalone kısaca
+  açıldı — Standalone geçici bir `LOCALAPPDATA` ile, gerçek veri klasörüne
+  yazmadan; Güncelleme exe'si UAC istediği için açılmadı).
+  `Misafirhane_Guncelleme_1.0.5.exe` → `onceki_surum: "1.0.4.5"` (bu makinenin
+  baseline'ı 1.0.4.5); başka sürüm kuruluysa "Tamir Et". Release v1.0.5
+  açıldı (bkz. madde 5).
 
 ---
 
@@ -683,8 +695,13 @@ değiştiriliyor, sezonluk fiyat yok).
 - Repo: `https://github.com/DorDeorz/misafirhane-app` — ana dal `main`,
   **public** (private değil). Push eden kimlik: `DorDeorz` (PAT, git credential
   manager'da).
-- Release'ler: **v1.0.1, v1.0.3, v1.0.4, v1.0.4.2, v1.0.4.4, v1.0.4.5**.
+- Release'ler: **v1.0.1, v1.0.3, v1.0.4, v1.0.4.2, v1.0.4.4, v1.0.4.5, v1.0.5**.
   Tag → commit:
+  - v1.0.5 → `075a9be` (main; 3 asset: `Misafirhane_Kurulumu_1.0.5.exe`
+    47,2 MB + `Misafirhane_Guncelleme_1.0.5.exe` 13,9 MB (onceki_surum
+    1.0.4.5) + `Misafirhane_1.0.5.exe` 54,2 MB; ev masaüstünde derlendi,
+    `Latest` etiketli, published 2026-09-27T17:02:57Z). 1.0.4.7 düzeltmeleri
+    de içinde (1.0.4.7'nin ayrı release'i yok).
   - v1.0.4 → `44f7f75`
   - v1.0.4.2 → `424d927`
   - v1.0.4.4 → `fd52c5d` (3 asset: Kurulum Aracı + Güncelleme + Standalone;
@@ -699,10 +716,7 @@ değiştiriliyor, sezonluk fiyat yok).
   - **1.0.4.6 (commit `4cf1742` + docs commit'i) için release YOK** — sürüm
     yeni yükseltildi, kullanıcı laptopta test edecek; release'i kullanıcı
     istemeden oluşturma.
-  - **1.0.4.7 (hata düzeltmeleri, PR ile) için release YOK** — kullanıcı
-    istemeden oluşturma.
-  - **1.0.5 (yeni özellikler, 1.0.4.7'nin üstüne ayrı PR) için release YOK** —
-    kullanıcı istemeden oluşturma.
+  - **1.0.4.7 için ayrı release YOK** — düzeltmeleri v1.0.5 release'inin içinde.
   - **1.0.4.4 için GitHub Release VAR** (bkz. yukarı). Önceki bir not burada
     "release yok" diyordu, bu 21 Eylül 2026'da `gh release list` ile
     doğrulanıp düzeltildi — ayrıntı için madde 4'teki "1.0.4.4" bölümünün
@@ -773,10 +787,9 @@ değiştiriliyor, sezonluk fiyat yok).
 ## 8. Mevcut durum + bilinen eksikler / öneriler
 
 - En yeni sürüm: **1.0.5** (kasa/borç, misafir kartı, hesap dökümü, günün
-  özeti, istatistik; dal `claude/project-thread-qapk35`, 1.0.4.7 dalının
-  üstüne ayrı PR) — **GitHub Release YOK**. Altındaki 1.0.4.7 (hata
-  düzeltmeleri; dal `claude/project-thread-di8nv3`, PR ile `main`'e) da
-  release'siz; önce o PR birleşmeli.
+  özeti, istatistik, çıkışta çift tıkla tahsil) — 1.0.4.7 ve 1.0.5 `main`'e
+  birleşti (075a9be); **GitHub Release v1.0.5 VAR** (`Latest`, 3 asset).
+  Güncelleme exe'si yalnızca 1.0.4.5'ten günceller.
   Öncesi: 1.0.4.6 (`4cf1742` + `7b61dbe` + docs `8b7b235`), o da release'siz. Ders (tekrar): bir sürüm eklerken madde 4, 5 VE 8'in hepsi
   güncellenmeli — bu oturum bu üçünü de güncelledi.
 - Bu `CLAUDE.md` dosyası 1.0.4.3'e kadar (yani epeyce geç) **git'e hiç
