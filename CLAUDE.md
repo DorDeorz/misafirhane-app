@@ -637,6 +637,11 @@ değiştiriliyor, sezonluk fiyat yok).
   DEĞİL), `export.gun_sonu_kasa_disa_aktar`; `repository.acik_borclar()`
   (check-in'li, iptal olmayan satırların BUGÜNDEN ÖNCEKİ ödenmemiş geceleri —
   bu gece henüz tamamlanmadığı için sayılmaz), `odasi_borclarini_tahsil_et`.
+  Çıkış sekmesinde (normal ve erken çıkış tablosu) satıra çift tık →
+  `CikisTab._cift_tik_tahsil_cikis`: seçili günden önceki borç varsa sorulur,
+  ödeme şekli seçilip `odasi_borclarini_tahsil_et(ro_id, sekil, tarih)` ile
+  tahsil edilir, ardından normal `cikis_akisi` açılır (aynı gün girip çıkanın
+  o günkü gecesi `cikis_akisi`'nın kendi tahsil sorusunda kalır).
 - **Tekrar gelen misafir / misafir kartı:** `repository.telefon_anahtari`,
   `misafir_gecmisi` (aynı telefon ya da rezervasyon/misafirler TC'si; iptal
   olmayan ve en az bir odası check-in yapılmış kayıtlar), `misafir_karti_getir`

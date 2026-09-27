@@ -205,6 +205,43 @@ yr.telefon.setText("+90 532 111 22 33")
 yr._misafiri_tani()
 kontrol(yr._misafir_sorunlu and yr.ad_soyad.text() == "Ali Veli" and not yr.misafir_bilgi.isHidden(),
         "yeni rezervasyonda tekrar gelen + sorunlu misafir uyarısı, ad otomatik dolar")
+from PySide6.QtCore import Qt
+print("Çıkış ekranında çift tıkla tahsil + çıkış")
+import detay_dialog
+from PySide6.QtWidgets import QMessageBox
+ric, roc = rez(9, -2, 2, ad="Borclu Cikan")
+R.odasi_misafirleri_kaydet_ve_checkin(roc, [dict(YER, ad_soyad="Borclu Cikan")])
+_orj = (QMessageBox.question, QMessageBox.information, QMessageBox.warning)
+QMessageBox.question = staticmethod(lambda *a, **k: QMessageBox.Yes)
+QMessageBox.information = staticmethod(lambda *a, **k: None)
+QMessageBox.warning = staticmethod(lambda *a, **k: None)
+try:
+    ct = main.CikisTab()
+    ct._odeme_sekli_sec = lambda: ("Havale/IBAN", True)
+    satir = [i for i in range(ct.tablo.rowCount()) if ct.tablo.item(i, 0).data(Qt.UserRole) == roc]
+    kontrol(len(satir) == 1 and ct.tablo.item(satir[0], 5).text() == "2,600₺", "çıkış listesinde borç görünür")
+    onceki_kasa = R.gun_sonu_kasa(g(0))["toplam"]
+    ct._cift_tik_tahsil_cikis(ct.tablo, satir[0])
+    od_c = odemeler(roc)
+    kontrol(all(o["odendi"] and o["odeme_sekli"] == "Havale/IBAN" for o in od_c.values()) and len(od_c) == 2,
+            "çift tık borcu seçilen şekille tahsil eder")
+    kontrol(R.gun_sonu_kasa(g(0))["toplam"] == onceki_kasa + 2600, "çift tık tahsilatı kasaya girer")
+    ro_c = [r for r in R.rezervasyon_odalar_listele(ric) if r["id"] == roc][0]
+    kontrol(ro_c["cikis_tarihi"] == g(0), "tahsilattan sonra çıkış yapılır")
+    kontrol(all(ct.tablo.item(i, 0).data(Qt.UserRole) != roc for i in range(ct.tablo.rowCount())),
+            "çıkış yapılan satır listeden düşer")
+    rid2, ro2 = rez(10, -1, 1, ad="Vazgecen")
+    R.odasi_misafirleri_kaydet_ve_checkin(ro2, [dict(YER, ad_soyad="Vazgecen")])
+    ct.yenile()
+    QMessageBox.question = staticmethod(lambda *a, **k: QMessageBox.No)
+    s2 = [i for i in range(ct.tablo.rowCount()) if ct.tablo.item(i, 0).data(Qt.UserRole) == ro2][0]
+    ct._cift_tik_tahsil_cikis(ct.tablo, s2)
+    kontrol(not any(o["odendi"] for o in odemeler(ro2).values())
+            and not [r for r in R.rezervasyon_odalar_listele(rid2) if r["id"] == ro2][0]["cikis_tarihi"],
+            "tahsilattan vazgeçilirse ne ödeme ne çıkış yapılır")
+finally:
+    QMessageBox.question, QMessageBox.information, QMessageBox.warning = _orj
+
 ana = main.AnaPencere()
 kontrol(ana.tabs.count() == 11, "ana pencere açılır")
 

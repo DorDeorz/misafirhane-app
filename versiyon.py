@@ -160,7 +160,8 @@ YENILIKLER = {
              "dökümü. Açılışta günün özeti (girişler, çıkışlar, boş odalar, fatura, "
              "borç, KBS). İstatistik: doluluk oranı, ortalama gecelik fiyat, ortalama "
              "kalış, önceki ay ve geçen yılla karşılaştırma, ödeme şekli ve referans "
-             "dağılımı.",
+             "dağılımı. Çıkış ekranında satıra çift tıklayınca önce ödenmemiş borç "
+             "tahsil edilir (ödeme şekli sorulur, kasaya girer), ardından çıkış yapılır.",
 }
 
 

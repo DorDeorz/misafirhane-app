@@ -2035,7 +2035,8 @@ class CikisTab(QWidget):
 
         aciklama = QLabel(
             "Bu liste, check-in yapılmış ve beklenen çıkış günü seçtiğin tarih olan misafirleri gösterir. "
-            "Çıkış yapınca oda otomatik 'temizlikte' durumuna alınır."
+            "Çıkış yapınca oda otomatik 'temizlikte' durumuna alınır. "
+            "Satıra çift tıklarsan önce borç tahsil edilir, sonra çıkış yapılır."
         )
         aciklama.setWordWrap(False)
         aciklama.setStyleSheet("font-style: italic; font-size: 10px;")
@@ -2049,6 +2050,9 @@ class CikisTab(QWidget):
         self.tablo.setEditTriggers(QTableWidget.NoEditTriggers)
         tabloyu_kompakt_yap(self.tablo, 34)
         self.tablo.setColumnWidth(6, 150)
+        self.tablo.setToolTip("Çift tıkla: varsa borcu tahsil et, ardından çıkış yap")
+        self.tablo.cellDoubleClicked.connect(
+            lambda satir, _k: self._cift_tik_tahsil_cikis(self.tablo, satir, erken=False))
         layout.addWidget(self.tablo, stretch=1)
 
         self.ozet_label = QLabel("")
@@ -2075,6 +2079,9 @@ class CikisTab(QWidget):
         self.erken_tablo.setEditTriggers(QTableWidget.NoEditTriggers)
         tabloyu_kompakt_yap(self.erken_tablo, 34)
         self.erken_tablo.setColumnWidth(6, 150)
+        self.erken_tablo.setToolTip("Çift tıkla: varsa borcu tahsil et, ardından erken çıkış yap")
+        self.erken_tablo.cellDoubleClicked.connect(
+            lambda satir, _k: self._cift_tik_tahsil_cikis(self.erken_tablo, satir, erken=True))
         layout.addWidget(self.erken_tablo, stretch=1)
 
         self.erken_ozet_label = QLabel("")
@@ -2097,6 +2104,8 @@ class CikisTab(QWidget):
             ]
             for col, val in enumerate(degerler):
                 item = QTableWidgetItem(val)
+                if col == 0:
+                    item.setData(Qt.UserRole, r["id"])
                 if col == 5 and borc:
                     tema.renklendir(item, "#f7c5c5")
                 self.tablo.setItem(row_idx, col, item)
@@ -2130,6 +2139,8 @@ class CikisTab(QWidget):
                 item = QTableWidgetItem(val)
                 if col == 4 and gecikmis:
                     tema.renklendir(item, "#fde3cf")
+                if col == 0:
+                    item.setData(Qt.UserRole, r["id"])
                 if col == 5 and borc:
                     tema.renklendir(item, "#f7c5c5")
                 self.erken_tablo.setItem(row_idx, col, item)
@@ -2171,6 +2182,51 @@ class CikisTab(QWidget):
         self.yenile()
         if self.yenile_callback:
             self.yenile_callback()
+
+    def _cift_tik_tahsil_cikis(self, tablo, satir, erken=False):
+        """Çıkış listesinde satıra çift tık: kesim gününden önceki ödenmemiş
+        geceler varsa önce tahsil edilir (ödeme şekli sorulur, kasaya o günün
+        tahsilatı olarak girer), ardından normal çıkış akışı açılır. Aynı gün
+        girip çıkanın o günkü gecesi çıkış akışının kendi tahsil sorusunda kalır."""
+        h = tablo.item(satir, 0)
+        if h is None or h.data(Qt.UserRole) is None:
+            return
+        ro_id = h.data(Qt.UserRole)
+        tarih_str = qdate_to_str(self.tarih_sec.date())
+        if tarih_str > date.today().isoformat():
+            QMessageBox.warning(self, "Çıkış Yapılamaz", "İleri bir tarih için çıkış yapılamaz.")
+            return
+        borc = repository.odasi_odenmemis_tutar(ro_id, kesim_tarihi=tarih_str)
+        if borc:
+            ad = tablo.item(satir, 1).text() if tablo.item(satir, 1) else ""
+            oda = h.text()
+            cevap = QMessageBox.question(
+                self, "Borç Tahsilatı",
+                f"{ad} ({oda})\nÖdenmemiş borç: {borc:,}₺\n\n"
+                "Borç şimdi tahsil edilip ardından çıkış yapılsın mı?",
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes,
+            )
+            if cevap != QMessageBox.Yes:
+                return
+            sekli, ok = self._odeme_sekli_sec()
+            if not ok:
+                return
+            try:
+                adet, tutar = repository.odasi_borclarini_tahsil_et(ro_id, sekli, tarih_str)
+            except Exception as e:
+                QMessageBox.warning(self, "Hata", f"Borç tahsil edilemedi: {e}")
+                return
+            self.yenile()
+            if self.yenile_callback:
+                self.yenile_callback()
+            QMessageBox.information(
+                self, "Tahsil Edildi",
+                f"{adet} gece, {tutar:,}₺ {sekli} ile ödendi olarak işaretlendi.\n"
+                "Şimdi çıkış işlemine geçiliyor.")
+        if erken:
+            self.erken_cikis_yap(ro_id, tarih_str)
+        else:
+            self.cikis_yap(ro_id, tarih_str)
 
     def cikis_yap(self, ro_id, tarih_str):
         self._cikisi_uygula(ro_id, "Çıkış İşlemi", "Misafir çıkış yaptı mı?", tarih_str)
