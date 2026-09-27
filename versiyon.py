@@ -149,7 +149,8 @@ YENILIKLER = {
                 "edilsin mi diye sorulur ('Gelmedi (İptal)'; iptal edilmesin denen "
                 "ya da iptali geri alınan bir daha sorulmaz). Çıkışı unutulan kalış planlı çıkış tarihiyle otomatik "
                 "kapatılır. Erken Çıkış listesi yalnızca şu an misafirhanede "
-                "kalanları gösterir.",
+                "kalanları gösterir. Arızalı/temizlikte odayı temize çekerken "
+                "yaşanan birkaç saniyelik donma giderildi.",
 }
 
 

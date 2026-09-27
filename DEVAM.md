@@ -21,6 +21,8 @@ hiç check-in olmayan rezervasyonlar `GelmeyenlerDialog` ile kullanıcıya sorul
 geri alınan → `'geri_alindi'`, bunlar bir daha sorulmaz; kullanıcı sessiz
 otomatik iptal istemedi); planlı çıkışı geçmiş
 çıkışsız satır planlı çıkışla kapanır; Erken Çıkış yalnızca içeridekiler.
+Oda durumunu temize çekerken ~5 sn donma: `oda_durum_ayarla` logu açık işlem
+içinde yazıyordu (kilit bekleme); log commit sonrasına alındı.
 Sonraki adım: Windows'ta gerçek arayüzle elle deneme; release kullanıcı isterse.
 
 ## DEVAM (21 Eylül 2026) — Temizlik/arıza çift tıklama + aynı gün giriş-çıkış hesabı (1.0.4.6, Release YOK)

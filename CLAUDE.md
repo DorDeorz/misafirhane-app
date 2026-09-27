@@ -606,6 +606,12 @@ izin verdi. Düzeltmeler:
   ve planlı çıkışı geçmiş satırı planlı çıkış tarihiyle kapatır (oda durumu ve
   ödemeler değişmez). `erken_cikis_adaylari` artık yalnızca planlı çıkışı
   seçili günden SONRA olan içerideki misafirleri döndürür.
+- **Oda durumu değiştirirken ~5 sn donma:** `repository.oda_durum_ayarla`,
+  `loglama.islem_yaz`'ı açık yazma işlemi (UPDATE yapılmış, commit edilmemiş)
+  içindeyken çağırıyordu; log ayrı bağlantı açtığından SQLite kilidinde
+  varsayılan 5 sn bekleyip "database is locked" ile sessizce düşüyordu (log
+  kaydı da kayboluyordu). Log artık commit'ten sonra yazılıyor. **Kural:**
+  `islem_yaz` asla açık bir yazma işlemi içinde çağrılmamalı.
 
 ---
 

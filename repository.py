@@ -216,7 +216,7 @@ def oda_durum_ayarla(oda_id, durum, ariza_gun=0):
                 isimler = ", ".join(c["ad_soyad"] for c in cakisma)
                 raise ValueError(f"Oda {oda['oda_no']} bugün için rezervasyonlu ({isimler}), temizlikte işaretlenemez.")
             cur.execute("UPDATE odalar SET durum='temizlikte', ariza_bitis=NULL WHERE id=?", (oda_id,))
-            loglama.islem_yaz("oda_durum", f"Oda {oda['oda_no']} temizlikte işaretlendi.")
+            log_mesaji = f"Oda {oda['oda_no']} temizlikte işaretlendi."
         elif durum == "arizali":
             gun = max(int(ariza_gun or 0), 0)
             if gun <= 0:
@@ -237,16 +237,20 @@ def oda_durum_ayarla(oda_id, durum, ariza_gun=0):
                     f"Oda {oda['oda_no']} arıza aralığında rezervasyonlu ({isimler}), arızalı işaretlenemez."
                 )
             cur.execute("UPDATE odalar SET durum='arizali', ariza_bitis=? WHERE id=?", (bitis, oda_id))
-            loglama.islem_yaz("oda_durum", f"Oda {oda['oda_no']} arızalı işaretlendi ({gun} gün, {bitis} tarihine kadar kapalı).")
+            log_mesaji = f"Oda {oda['oda_no']} arızalı işaretlendi ({gun} gün, {bitis} tarihine kadar kapalı)."
         else:
             cur.execute("UPDATE odalar SET durum='temiz', ariza_bitis=NULL WHERE id=?", (oda_id,))
-            loglama.islem_yaz("oda_durum", f"Oda {oda['oda_no']} temiz/Temizlik bitti işaretlendi.")
+            log_mesaji = f"Oda {oda['oda_no']} temiz/Temizlik bitti işaretlendi."
         conn.commit()
     except Exception:
         conn.rollback()
         raise
     finally:
         conn.close()
+    # Log, işlem kapandıktan SONRA yazılır: açık yazma işlemi varken ayrı
+    # bağlantıyla yazmaya çalışmak veritabanı kilidinde ~5 sn bekletip
+    # (arayüz donuyordu) sonunda log kaydını sessizce kaybediyordu.
+    loglama.islem_yaz("oda_durum", log_mesaji)
 
 
 # ---------------- ORTAK YARDIMCILAR ----------------

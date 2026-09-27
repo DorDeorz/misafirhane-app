@@ -219,6 +219,16 @@ kapali = database.get_connection().execute("SELECT cikis_tarihi FROM rezervasyon
 kontrol(kapali == g(-3), "çıkışı unutulan kalış planlı çıkış tarihiyle kapatılır")
 kontrol(R.gunluk_bakim() == 0, "bakım ikinci kez çalışınca bir şey değiştirmez")
 
+print("Oda durumu değiştirme hızı")
+import time
+_t = time.perf_counter()
+R.oda_durum_ayarla(O[4], "temizlikte")
+R.oda_durum_ayarla(O[4], "temiz")
+kontrol(time.perf_counter() - _t < 1, "temizlikte/temiz işaretleme beklemeden biter (veritabanı kilidi yok)")
+_log = database.get_connection().execute(
+    "SELECT COUNT(*) FROM islem_gecmisi WHERE tur='oda_durum' AND detay LIKE 'Oda 4 %'").fetchone()[0]
+kontrol(_log >= 2, "oda durumu değişikliği işlem geçmişine yazılır")
+
 print("Kullanıcılar")
 auth.kullanici_ekle("İSMAİL", "1234")
 kontrol(auth.kullanici_dogrula("ismail", "1234") is not None, "'İSMAİL' hesabına 'ismail' ile girilebilir")
