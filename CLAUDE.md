@@ -593,12 +593,16 @@ izin verdi. Düzeltmeler:
 - **Günlük bakım (kullanıcının ek isteği — "4 ay önceki rezervasyon Erken
   Çıkış'ta duruyor"):** `rezervasyonlar`'a `iptal_nedeni` kolonu (otomatik
   migrasyon). `repository.gunluk_bakim()` (`AnaPencere` açılışında ve
-  `_tumunu_yenile`'de) iki iş yapar: `gelmeyenleri_otomatik_iptal_et` — tüm
-  odalarının giriş günü geçmiş ve hiç check-in yapılmamış rezervasyonu
-  `iptal=1, iptal_nedeni='gelmedi'` yapar (etiket "Gelmedi (Otomatik İptal)",
-  Gelmedi filtresinde ve no-show istatistiğinde sayılır, iptal gecesine
-  sayılmaz; iptali geri alınırsa `'geri_alindi'` olur ve bir daha otomatik
-  iptal edilmez); `suresi_gecmis_konaklamalari_kapat` — check-in'li, çıkışsız
+  `_tumunu_yenile`'de) `suresi_gecmis_konaklamalari_kapat`'ı çalıştırır. Gelmeyen
+  rezervasyonlar SESSİZCE İPTAL EDİLMEZ (kullanıcı açıkça sorulmasını istedi):
+  `repository.gelmeyen_rezervasyonlar` (tüm odalarının giriş günü geçmiş, hiç
+  check-in yok) `main.GelmeyenlerDialog`'da listelenir; işaretliler
+  `gelmeyenleri_iptal_et` ile `iptal=1, iptal_nedeni='gelmedi'` olur (etiket
+  "Gelmedi (İptal)", Gelmedi filtresinde ve no-show istatistiğinde sayılır,
+  iptal gecesine sayılmaz); işareti kaldırılanlar `gelmeyenleri_iptal_etme` ile
+  `'iptal_edilmesin'` olur; iptali geri alınan `'geri_alindi'` olur — bu ikisi
+  bir daha sorulmaz. "Daha Sonra Sor" o oturumda tekrar sormaz.
+  `suresi_gecmis_konaklamalari_kapat` — check-in'li, çıkışsız
   ve planlı çıkışı geçmiş satırı planlı çıkış tarihiyle kapatır (oda durumu ve
   ödemeler değişmez). `erken_cikis_adaylari` artık yalnızca planlı çıkışı
   seçili günden SONRA olan içerideki misafirleri döndürür.

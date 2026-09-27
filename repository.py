@@ -636,7 +636,7 @@ def rezervasyon_durum_etiketi(d, bugun_str=None):
         bugun_str = date.today().isoformat()
     if d["iptal"]:
         if d.get("iptal_nedeni") == "gelmedi":
-            return "Gelmedi (Otomatik İptal)"
+            return "Gelmedi (İptal)"
         return "İptal Edildi"
     oda_sayisi = d["oda_sayisi"] or 0
     if oda_sayisi == 0:
@@ -1248,43 +1248,81 @@ def gelmedi_mi(rez_row, bugun_str=None):
 
 # ---------------- GÜNLÜK BAKIM (otomatik iptal / kapatma) ----------------
 
-def gelmeyenleri_otomatik_iptal_et(bugun_str=None):
+def gelmeyen_rezervasyonlar(bugun_str=None):
     """Giriş günü GEÇMİŞ (tüm odalarının giriş tarihi bugünden önce) ve hiçbir
-    odasına check-in yapılmamış rezervasyonları otomatik iptal eder
-    (iptal_nedeni='gelmedi'). Böylece gelmeyen misafirin odası boşa tutulmaz ve
-    eski kayıtlar listelerde birikmez. Bir otomatik iptal elle geri alındıysa
-    (iptal_nedeni='geri_alindi') o rezervasyon bir daha iptal edilmez.
-    Çok odalı rezervasyonda odalardan biri bile check-in yaptıysa ya da bir
-    odanın giriş günü henüz gelmediyse dokunulmaz. Döner: iptal edilen sayı."""
+    odasına check-in yapılmamış, iptal edilmemiş rezervasyonlar — yani gelmeyen
+    misafirler. Uygulama bunları kullanıcıya gösterip iptal edilsin mi diye
+    sorar (bkz. main.py GelmeyenlerDialog). Kullanıcı 'iptal edilmesin' dediyse
+    (iptal_nedeni='iptal_edilmesin') ya da bir otomatik iptali geri aldıysa
+    (iptal_nedeni='geri_alindi') o rezervasyon bir daha sorulmaz. Çok odalı
+    rezervasyonda odalardan biri bile check-in yaptıysa ya da bir odanın giriş
+    günü henüz gelmediyse listelenmez."""
     bugun = bugun_str or date.today().isoformat()
     conn = get_connection()
     try:
-        cur = conn.cursor()
-        adaylar = cur.execute("""
-            SELECT r.id, r.ad_soyad, MIN(ro.giris_tarihi) as giris
+        return conn.execute("""
+            SELECT r.id, r.ad_soyad, r.telefon, MIN(ro.giris_tarihi) as giris_tarihi,
+                   MAX(ro.gece_sayisi) as gece_sayisi,
+                   GROUP_CONCAT(o.kat_adi || ' ' || o.oda_no, ', ') as odalar
             FROM rezervasyonlar r
             JOIN rezervasyon_odalar ro ON ro.rezervasyon_id = r.id
-            WHERE r.iptal = 0 AND COALESCE(r.iptal_nedeni, '') != 'geri_alindi'
+            JOIN odalar o ON o.id = ro.oda_id
+            WHERE r.iptal = 0
+              AND COALESCE(r.iptal_nedeni, '') NOT IN ('geri_alindi', 'iptal_edilmesin')
             GROUP BY r.id
             HAVING SUM(CASE WHEN ro.checkin_yapildi = 1 THEN 1 ELSE 0 END) = 0
                AND MAX(ro.giris_tarihi) < ?
+            ORDER BY giris_tarihi, r.id
         """, (bugun,)).fetchall()
-        for a in adaylar:
-            cur.execute("UPDATE rezervasyonlar SET iptal=1, iptal_nedeni='gelmedi' WHERE id=?", (a["id"],))
+    finally:
+        conn.close()
+
+
+def gelmeyenleri_iptal_et(rez_idler):
+    """Kullanıcının onayladığı gelmeyen rezervasyonları 'gelmedi' nedeniyle iptal
+    eder (etiket: 'Gelmedi (İptal)'). Check-in yapılmış oda varsa atlar.
+    Döner: iptal edilen sayı."""
+    conn = get_connection()
+    iptal_edilenler = []
+    try:
+        cur = conn.cursor()
+        for rid in rez_idler:
+            r = cur.execute("SELECT id, ad_soyad, iptal FROM rezervasyonlar WHERE id=?", (rid,)).fetchone()
+            if r is None or r["iptal"]:
+                continue
+            icerde = cur.execute(
+                "SELECT COUNT(*) FROM rezervasyon_odalar WHERE rezervasyon_id=? AND checkin_yapildi=1",
+                (rid,)).fetchone()[0]
+            if icerde:
+                continue
+            cur.execute("UPDATE rezervasyonlar SET iptal=1, iptal_nedeni='gelmedi' WHERE id=?", (rid,))
+            iptal_edilenler.append(r)
         conn.commit()
     except Exception:
         conn.rollback()
         raise
     finally:
         conn.close()
-    for a in adaylar:
+    for r in iptal_edilenler:
         loglama.islem_yaz(
             "rezervasyon_iptal",
-            f"{a['ad_soyad']} rezervasyonu (#{a['id']}) giriş günü ({a['giris']}) gelmediği "
-            "için otomatik iptal edildi.",
-            kullanici="sistem",
-        )
-    return len(adaylar)
+            f"{r['ad_soyad']} rezervasyonu (#{r['id']}) misafir giriş gününde gelmediği için iptal edildi.")
+    return len(iptal_edilenler)
+
+
+def gelmeyenleri_iptal_etme(rez_idler):
+    """Kullanıcı 'iptal edilmesin' dediği gelmeyen rezervasyonları işaretler;
+    bunlar bir daha sorulmaz (rezervasyon aktif kalır)."""
+    if not rez_idler:
+        return
+    conn = get_connection()
+    try:
+        conn.executemany(
+            "UPDATE rezervasyonlar SET iptal_nedeni='iptal_edilmesin' WHERE id=? AND iptal=0",
+            [(rid,) for rid in rez_idler])
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def suresi_gecmis_konaklamalari_kapat(bugun_str=None):
@@ -1329,8 +1367,10 @@ def suresi_gecmis_konaklamalari_kapat(bugun_str=None):
 
 
 def gunluk_bakim():
-    """Uygulama açılışında ve her genel yenilemede çağrılır."""
-    return gelmeyenleri_otomatik_iptal_et(), suresi_gecmis_konaklamalari_kapat()
+    """Uygulama açılışında ve her genel yenilemede çağrılır. Gelmeyen
+    rezervasyonlar burada iptal EDİLMEZ; kullanıcıya sorulur
+    (gelmeyen_rezervasyonlar)."""
+    return suresi_gecmis_konaklamalari_kapat()
 
 
 # ---------------- GÜNLÜK GÖRÜNÜMLER ----------------

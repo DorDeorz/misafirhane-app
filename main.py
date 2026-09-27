@@ -2432,6 +2432,67 @@ class IslemGecmisiTab(QWidget):
 # ============================================================
 # ANA PENCERE
 # ============================================================
+class GelmeyenlerDialog(QDialog):
+    """Giriş günü geçtiği halde gelmeyen (check-in yapılmamış) rezervasyonları
+    listeler ve iptal edilip edilmeyeceğini sorar. İşaretliler 'Gelmedi' olarak
+    iptal edilir; işareti kaldırılanlar iptal edilmez ve bir daha sorulmaz.
+    'Daha Sonra Sor' hiçbir şey değiştirmez."""
+
+    def __init__(self, satirlar, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Gelmeyen Rezervasyonlar")
+        self.resize(640, 360)
+        self.satirlar = satirlar
+        layout = QVBoxLayout(self)
+        layout.setSpacing(6)
+        aciklama = QLabel(
+            f"Aşağıdaki {len(satirlar)} rezervasyonun giriş günü geçti ama misafir gelmedi "
+            "(check-in yapılmadı).\nİşaretli olanlar iptal edilsin mi? İşaretini "
+            "kaldırdıklarınız iptal edilmez ve bir daha sorulmaz."
+        )
+        aciklama.setWordWrap(True)
+        layout.addWidget(aciklama)
+
+        self.tablo = QTableWidget(len(satirlar), 5)
+        self.tablo.setHorizontalHeaderLabels(["İptal", "Ad Soyad", "Oda", "Giriş", "Gece"])
+        self.tablo.verticalHeader().setVisible(False)
+        self.tablo.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.tablo.setSelectionMode(QAbstractItemView.NoSelection)
+        for i, r in enumerate(satirlar):
+            kutu = QTableWidgetItem()
+            kutu.setFlags(Qt.ItemIsUserCheckable | Qt.ItemIsEnabled)
+            kutu.setCheckState(Qt.Checked)
+            kutu.setData(Qt.UserRole, r["id"])
+            self.tablo.setItem(i, 0, kutu)
+            self.tablo.setItem(i, 1, QTableWidgetItem(r["ad_soyad"] or ""))
+            self.tablo.setItem(i, 2, QTableWidgetItem(r["odalar"] or ""))
+            self.tablo.setItem(i, 3, QTableWidgetItem(r["giris_tarihi"] or ""))
+            self.tablo.setItem(i, 4, QTableWidgetItem(str(r["gece_sayisi"] or "")))
+        baslik = self.tablo.horizontalHeader()
+        baslik.setSectionResizeMode(QHeaderView.ResizeToContents)
+        baslik.setSectionResizeMode(1, QHeaderView.Stretch)
+        layout.addWidget(self.tablo)
+
+        butonlar = QHBoxLayout()
+        butonlar.addStretch()
+        sonra_btn = QPushButton("Daha Sonra Sor")
+        sonra_btn.clicked.connect(self.reject)
+        iptal_btn = QPushButton("İşaretlileri İptal Et")
+        iptal_btn.setObjectName("birincil")
+        iptal_btn.clicked.connect(self.accept)
+        butonlar.addWidget(sonra_btn)
+        butonlar.addWidget(iptal_btn)
+        layout.addLayout(butonlar)
+
+    def secimler(self):
+        """(iptal edilecek id'ler, iptal edilmeyecek id'ler)"""
+        iptal, birak = [], []
+        for i in range(self.tablo.rowCount()):
+            kutu = self.tablo.item(i, 0)
+            (iptal if kutu.checkState() == Qt.Checked else birak).append(kutu.data(Qt.UserRole))
+        return iptal, birak
+
+
 class AnaPencere(QMainWindow):
     def __init__(self, aktif_kullanici=None, cikis_callback=None):
         super().__init__()
@@ -2491,6 +2552,9 @@ class AnaPencere(QMainWindow):
             loglama.set_aktif_kullanici(olusturan)
 
         self._gunluk_bakim()
+        self._gelmeyen_soruluyor = False
+        self._gelmeyen_ertelenen = set()
+        QTimer.singleShot(0, self._gelmeyenleri_sor)
 
         self.oda_durumu_tab = OdaDurumuTab(yenile_callback=self._tumunu_yenile)
         self.gunluk_giris_tab = GunlukGirisTab()
@@ -2546,16 +2610,45 @@ class AnaPencere(QMainWindow):
         dialog.exec()
 
     def _gunluk_bakim(self):
-        """Gelmeyen rezervasyonları otomatik iptal eder, çıkışı unutulmuş eski
-        konaklamaları kapatır (bkz. repository.gunluk_bakim). Hata olursa
-        uygulamanın açılmasını engellemez."""
+        """Çıkışı unutulmuş eski konaklamaları kapatır (bkz.
+        repository.gunluk_bakim). Hata olursa uygulamanın açılmasını engellemez."""
         try:
             repository.gunluk_bakim()
         except Exception:
             pass
 
+    def _gelmeyenleri_sor(self):
+        """Giriş günü geçip gelmeyen rezervasyonları kullanıcıya gösterir, iptal
+        edilsin mi diye sorar. 'Daha Sonra Sor' denenler bu oturumda tekrar
+        sorulmaz (uygulama yeniden açılınca sorulur)."""
+        if self._gelmeyen_soruluyor:
+            return
+        try:
+            satirlar = [r for r in repository.gelmeyen_rezervasyonlar()
+                        if r["id"] not in self._gelmeyen_ertelenen]
+        except Exception:
+            return
+        if not satirlar:
+            return
+        self._gelmeyen_soruluyor = True
+        try:
+            dlg = GelmeyenlerDialog(satirlar, self)
+            if dlg.exec() != QDialog.Accepted:
+                self._gelmeyen_ertelenen.update(r["id"] for r in satirlar)
+                return
+            iptal, birak = dlg.secimler()
+            try:
+                repository.gelmeyenleri_iptal_et(iptal)
+                repository.gelmeyenleri_iptal_etme(birak)
+            except Exception as e:
+                QMessageBox.warning(self, "Hata", f"Gelmeyen rezervasyonlar işlenemedi: {e}")
+            self._tumunu_yenile()
+        finally:
+            self._gelmeyen_soruluyor = False
+
     def _tumunu_yenile(self):
         self._gunluk_bakim()
+        QTimer.singleShot(0, self._gelmeyenleri_sor)
         self.oda_durumu_tab.yenile()
         self.checkin_tab.yenile()
         self.gunluk_giris_tab.yenile()
