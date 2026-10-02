@@ -8,7 +8,7 @@ Küçük işletmeler ve misafirhaneler için **internetsiz çalışan** masaüst
 
 > Görüntüler örnek (uydurma) test verisiyle alınmıştır; gerçek misafir bilgisi içermez.
 
-| Oda Durumu | Yeni Rezervasyon (tekrar gelen misafir) |
+| Oda Durumu (sol menü) | Yeni Rezervasyon (tekrar gelen misafir) |
 |---|---|
 | ![Oda Durumu](docs/ekran/oda_durumu.png) | ![Yeni Rezervasyon](docs/ekran/tekrar_gelen_misafir.png) |
 | **Rezervasyon detayı ve misafir kartı** | **Çıkış (borç gösterimi, çift tıkla tahsil + çıkış)** |
@@ -17,8 +17,11 @@ Küçük işletmeler ve misafirhaneler için **internetsiz çalışan** masaüst
 | ![Gün sonu kasa](docs/ekran/kasa.png) | ![Açık borçlar](docs/ekran/acik_borclar.png) |
 | **İstatistik** | **Rezervasyon Yönetimi** |
 | ![İstatistik](docs/ekran/istatistik.png) | ![Rezervasyon Yönetimi](docs/ekran/rezervasyon_yonetimi.png) |
+| **Misafirler** | **Konaklayan Listesi** |
+| ![Misafirler](docs/ekran/misafirler.png) | ![Konaklayan Listesi](docs/ekran/konaklayan_listesi.png) |
+| **Sol menü daraltılmış (☰ / Ctrl+B)** | **Günün özeti** |
+| ![Sol menü daraltılmış](docs/ekran/kenar_dar.png) | ![Günün özeti](docs/ekran/gunun_ozeti.png) |
 
-<p align="center"><img src="docs/ekran/gunun_ozeti.png" alt="Günün özeti" width="460"><br><em>Açılışta gösterilen günün özeti</em></p>
 
 ## Ne yapar?
 
