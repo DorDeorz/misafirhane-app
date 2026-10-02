@@ -689,7 +689,7 @@ değiştiriliyor, sezonluk fiyat yok).
   açıldı (bkz. madde 5).
 
 ### 1.0.6 (dal `claude/project-thread-sz12dl`, bulut oturumunda Claude Code ile
-yapıldı, PR ile gönderildi — **Release YOK**)
+yapıldı, PR #5 ile `main`'e birleşti (59c00f9) — **Release v1.0.6 VAR**)
 
 Kullanıcının "Konaklayan listesi" fikri (ayrı program yerine uygulamanın
 içine — kullanıcı onayladı). Kararlar: ayrı "kara liste" YOK, mevcut
@@ -742,8 +742,20 @@ kullanıcı (`loglama.AKTIF_KULLANICI`).
   uyarlandı; `hata_duzeltme_test.py`, `kbs_test.py`,
   `oda_degistir_kbs_test.py` geçti. `test_verisi_105.py` geldiği yer, puan,
   sorunlu nedeni ve not örnekleri üretiyor. Kullanıcı 2 Ekim 2026'da ev
-  masaüstünde test verisiyle elle denedi (1c8889a), sorunsuz; README ekran görüntüleri (`docs/ekran/`) hâlâ eski üst sekmeli
-  düzeni gösteriyor.
+  masaüstünde test verisiyle elle denedi (1c8889a), sorunsuz. README ekran
+  görüntüleri (`docs/ekran/`) sol menülü düzene göre yenilendi (5593ab2;
+  Misafirler, Konaklayan Listesi, dar menü eklendi).
+- **Derleme + Release (2 Ekim 2026, LAPTOP'ta):** 5 test dosyası geçti;
+  `guncelleme_olustur.py --tam` + Kurulum Aracı + Standalone derlendi
+  (PySide6 6.11.2). Laptop'un baseline'ı 1.0.4.4 olduğundan
+  `Misafirhane_Guncelleme_1.0.6.exe` → `onceki_surum: "1.0.4.4"`; 1.0.5
+  kurulu bilgisayar Kurulum Aracı'nda Güncelle/Tamir Et kullanmalı (sürüm
+  notunda yazıyor). Laptop'un `dagitim/son_manifest.json`'ı artık 1.0.6;
+  ev masaüstününki hâlâ 1.0.4.5 (1.0.5 orada derlendi) — sonraki derleme
+  hangi makinede yapılırsa onceki_surum'u ona göre kontrol et. Standalone
+  geçici LOCALAPPDATA ile açıldı; Kurulum Aracı laptopta Windows Uygulama
+  Denetimi (imzasız exe) tarafından engellendiği için açılamadı, ayar
+  değiştirilmedi.
 
 ---
 
@@ -752,8 +764,12 @@ kullanıcı (`loglama.AKTIF_KULLANICI`).
 - Repo: `https://github.com/DorDeorz/misafirhane-app` — ana dal `main`,
   **public** (private değil). Push eden kimlik: `DorDeorz` (PAT, git credential
   manager'da).
-- Release'ler: **v1.0.1, v1.0.3, v1.0.4, v1.0.4.2, v1.0.4.4, v1.0.4.5, v1.0.5**.
+- Release'ler: **v1.0.1, v1.0.3, v1.0.4, v1.0.4.2, v1.0.4.4, v1.0.4.5, v1.0.5, v1.0.6**.
   Tag → commit:
+  - v1.0.6 → `59c00f9` (main, PR #5 birleşmesi; 3 asset:
+    `Misafirhane_Kurulumu_1.0.6.exe` 58,9 MB + `Misafirhane_Guncelleme_1.0.6.exe`
+    53,6 MB (onceki_surum 1.0.4.4) + `Misafirhane_1.0.6.exe` 69,7 MB; laptopta
+    derlendi, `Latest`).
   - v1.0.5 → `075a9be` (main; 3 asset: `Misafirhane_Kurulumu_1.0.5.exe`
     47,2 MB + `Misafirhane_Guncelleme_1.0.5.exe` 13,9 MB (onceki_surum
     1.0.4.5) + `Misafirhane_1.0.5.exe` 54,2 MB; ev masaüstünde derlendi,
@@ -774,8 +790,6 @@ kullanıcı (`loglama.AKTIF_KULLANICI`).
     yeni yükseltildi, kullanıcı laptopta test edecek; release'i kullanıcı
     istemeden oluşturma.
   - **1.0.4.7 için ayrı release YOK** — düzeltmeleri v1.0.5 release'inin içinde.
-  - **1.0.6 için release YOK** (henüz) — kullanıcı Windows'ta denemeden ve
-    açıkça istemeden release açma.
   - **1.0.4.4 için GitHub Release VAR** (bkz. yukarı). Önceki bir not burada
     "release yok" diyordu, bu 21 Eylül 2026'da `gh release list` ile
     doğrulanıp düzeltildi — ayrıntı için madde 4'teki "1.0.4.4" bölümünün
@@ -845,12 +859,13 @@ kullanıcı (`loglama.AKTIF_KULLANICI`).
 
 ## 8. Mevcut durum + bilinen eksikler / öneriler
 
-- Kodda en yeni sürüm: **1.0.6** (Misafirler sekmesi / Konaklayan Listesi /
-  not geçmişi / sol kenar çubuğu — PR ile, release yok). Yayındaki en yeni:
-  **1.0.5** (kasa/borç, misafir kartı, hesap dökümü, günün
+- Kodda ve yayında en yeni sürüm: **1.0.6** (Misafirler sekmesi / Konaklayan
+  Listesi / not geçmişi / sol kenar çubuğu — **Release v1.0.6 VAR**, `Latest`;
+  Güncelleme exe'si yalnızca 1.0.4.4'ten günceller, 1.0.5'ten Kurulum Aracı).
+  Önceki: **1.0.5** (kasa/borç, misafir kartı, hesap dökümü, günün
   özeti, istatistik, çıkışta çift tıkla tahsil) — 1.0.4.7 ve 1.0.5 `main`'e
-  birleşti (075a9be); **GitHub Release v1.0.5 VAR** (`Latest`, 3 asset).
-  Güncelleme exe'si yalnızca 1.0.4.5'ten günceller.
+  birleşti (075a9be); **GitHub Release v1.0.5 VAR** (3 asset).
+  1.0.5 Güncelleme exe'si yalnızca 1.0.4.5'ten günceller.
   Öncesi: 1.0.4.6 (`4cf1742` + `7b61dbe` + docs `8b7b235`), o da release'siz. Ders (tekrar): bir sürüm eklerken madde 4, 5 VE 8'in hepsi
   güncellenmeli — bu oturum bu üçünü de güncelledi.
 - Bu `CLAUDE.md` dosyası 1.0.4.3'e kadar (yani epeyce geç) **git'e hiç
