@@ -713,9 +713,6 @@ class RezervasyonDetayDialog(QDialog):
         etiket.setWordWrap(True)
         lay.addWidget(etiket)
         self.kart_kutusu = MisafirKartiKutusu(self.kart)
-        self.kart_kutusu.setTitle("")
-        self.kart_kutusu.setFlat(True)
-        self.kart_kutusu.layout().setContentsMargins(0, 2, 0, 0)
         lay.addWidget(self.kart_kutusu)
         return kutu
 
@@ -727,6 +724,9 @@ class RezervasyonDetayDialog(QDialog):
         lay = QVBoxLayout(kutu)
         lay.setContentsMargins(6, 12, 6, 6)
         sekmeler = QTabWidget()
+        sekmeler.setUsesScrollButtons(False)
+        sekmeler.tabBar().setElideMode(Qt.ElideRight)
+        sekmeler.setStyleSheet("QTabBar::tab { padding: 4px 5px; margin-right: 0px; }")
         self.rez_notlari = NotlarWidget("rezervasyon", r["id"])
         kimlik_var = bool(repository.telefon_anahtari(r["telefon"]) or (r["tc_no"] or "").strip())
         self.misafir_notlari = NotlarWidget(

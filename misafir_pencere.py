@@ -146,7 +146,9 @@ class MisafirDetayDialog(QDialog):
         sag_lay = QVBoxLayout(sag)
         sag_lay.setContentsMargins(0, 0, 0, 0)
         self.kart_kutusu = MisafirKartiKutusu(self.kart)
-        sag_lay.addWidget(self.kart_kutusu)
+        kart_cerceve = QGroupBox("Puan ve Uyarı")
+        QVBoxLayout(kart_cerceve).addWidget(self.kart_kutusu)
+        sag_lay.addWidget(kart_cerceve)
         notlar_kutu = QGroupBox("Misafir Notları")
         n_lay = QVBoxLayout(notlar_kutu)
         self.notlar = NotlarWidget(
@@ -193,15 +195,15 @@ class MisafirDetayDialog(QDialog):
         self.accept()
 
 
-class MisafirKartiKutusu(QGroupBox):
+class MisafirKartiKutusu(QWidget):
     """Puan (1-5) + sorunlu işareti ve nedeni; rezervasyon detayında ve
     misafir kartı penceresinde ortak. kaydet() çağrılınca yazılır."""
 
     def __init__(self, kart, parent=None):
-        super().__init__("Puan ve Uyarı", parent)
+        super().__init__(parent)
         self.kart = kart or {}
         lay = QGridLayout(self)
-        lay.setContentsMargins(8, 14, 8, 8)
+        lay.setContentsMargins(0, 0, 0, 0)
         lay.setVerticalSpacing(4)
 
         lay.addWidget(QLabel("Puan:"), 0, 0)
