@@ -3,6 +3,18 @@
 Bu dosya, evdeki masaüstü bilgisayardaki opencode oturumunun kaldığı yerden devam
 edebilmesi için hazırlandı. İlk iş olarak okuyun.
 
+## DEVAM (2 Ekim 2026) — Antivirüs yanlış alarmları (derleme betiği)
+
+Kullanıcı exe'lerin güvenlik denetimlerinden geçmesini istedi; kod imzalama
+seçenekleri sunuldu (Certum açık kaynak bulut sertifikası önerildi, Azure
+Artifact Signing Türkiye'den bireysel olarak açık değil), kullanıcı şimdilik
+**sertifikasız** yolu seçti. `guncelleme_olustur.py`: bütün exe'lere sürüm/
+yayıncı bilgisi, `--noupx`, `--tam` artık Kurulum Aracı + Standalone'u da
+derliyor; `kurulum.iss`'e `VersionInfo*`. Release sonrası adımlar:
+`docs/YANLIS_ALARM.md`. Sonraki adım: bir sonraki derlemede Windows'ta
+`--tam`'ı çalıştırıp 3 exe'nin Özellikler > Ayrıntılar'ını ve VirusTotal
+sonucunu kontrol etmek.
+
 ## DEVAM (2 Ekim 2026) — 1.0.6: Konaklayan Listesi + sol kenar çubuğu (Release YOK)
 
 Kullanıcının "Konaklayan listesi" fikri uygulamanın içine yapıldı (ayrıntı:

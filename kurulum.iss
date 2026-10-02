@@ -12,6 +12,12 @@ AppName=Misafirhane Rezervasyon
 AppVersion={#MyAppVersion}
 AppPublisher=DorDeorz
 AppVerName=Misafirhane Rezervasyon {#MyAppVersion}
+; Exe'nin Ozellikler > Ayrintilar bilgisi (antivirus yanlis alarmlarini azaltir)
+VersionInfoVersion={#MyAppVersion}
+VersionInfoCompany=DorDeorz
+VersionInfoDescription=Misafirhane Rezervasyon Kurulum Motoru
+VersionInfoProductName=Misafirhane Rezervasyon
+VersionInfoProductVersion={#MyAppVersion}
 DefaultDirName={autopf}\Misafirhane Rezervasyon
 DefaultGroupName=Misafirhane
 DisableProgramGroupPage=yes
