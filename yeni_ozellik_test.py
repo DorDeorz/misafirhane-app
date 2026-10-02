@@ -143,16 +143,17 @@ kontrol(len(R.misafir_gecmisi(tc_no="10000000146")) == 1, "check-in'deki misafir
 kontrol(not R.misafir_gecmisi(telefon="12"), "kısa numara eşleşme yapmaz")
 
 print("Misafir kartı")
-kontrol(hata_verir_mi(lambda: R.misafir_karti_kaydet("", "", "X", "not", False)), "telefon/TC olmadan kart reddedilir")
-R.misafir_karti_kaydet("0532 111 22 33", "", "Ali Veli", "Gürültü yaptı", True)
+# 1.0.6: kart = puan + sorunlu işareti (nedeniyle); notlar ayrı not geçmişinde
+kontrol(hata_verir_mi(lambda: R.misafir_karti_kaydet("", "", "X", 3)), "telefon/TC olmadan kart reddedilir")
+R.misafir_karti_kaydet("0532 111 22 33", "", "Ali Veli", sorunlu=True, sorunlu_nedeni="Gürültü yaptı")
 kart = R.misafir_karti_getir(telefon="+905321112233")
-kontrol(kart and kart["sorunlu"] == 1 and kart["notu"] == "Gürültü yaptı", "kart telefonla bulunur")
-R.misafir_karti_kaydet("0532 111 22 33", "10000000146", "Ali Veli", "Sorun çözüldü", False)
-kontrol(R.misafir_karti_getir(tc_no="10000000146")["notu"] == "Sorun çözüldü", "kart güncellenir, TC ile de bulunur")
+kontrol(kart and kart["sorunlu"] == 1 and kart["sorunlu_nedeni"] == "Gürültü yaptı", "kart telefonla bulunur")
+R.misafir_karti_kaydet("0532 111 22 33", "10000000146", "Ali Veli", puan=4)
+kontrol(R.misafir_karti_getir(tc_no="10000000146")["puan"] == 4, "kart güncellenir, TC ile de bulunur")
 kontrol(len(database.get_connection().execute("SELECT * FROM misafir_kartlari").fetchall()) == 1,
         "güncelleme yeni kart açmaz")
-R.misafir_karti_kaydet("0532 111 22 33", "", "Ali Veli", "", False)
-kontrol(R.misafir_karti_getir(telefon="05321112233") is None, "boş not + sorunsuz kartı siler")
+R.misafir_karti_kaydet("0532 111 22 33", "", "Ali Veli", 0, False)
+kontrol(R.misafir_karti_getir(telefon="05321112233") is None, "puansız + sorunsuz + notsuz kart silinir")
 
 print("Hesap dökümü verisi")
 v = R.hesap_dokumu_verisi(ria)
@@ -197,9 +198,10 @@ d = main.GunOzetiDialog(R.gunun_ozeti(), {"giris_bekleyen": 1, "cikis_bekleyen":
 kontrol(d.windowTitle().startswith("Günün Özeti"), "günün özeti penceresi açılır")
 ist = main.IstatistikTab()
 kontrol(ist.tablo.rowCount() == len(ist.METRIKLER) and ist.ref_tablo.rowCount() >= 1, "istatistik sekmesi dolar")
-R.misafir_karti_kaydet("0532 111 22 33", "", "Ali Veli", "Kara liste", True)
+R.misafir_karti_kaydet("0532 111 22 33", "", "Ali Veli", sorunlu=True, sorunlu_nedeni="Kara liste")
 dd = RezervasyonDetayDialog(ria)
-kontrol(dd.kart_sorunlu.isChecked() and dd.kart_notu.toPlainText() == "Kara liste", "detayda misafir kartı görünür")
+kontrol(dd.kart_kutusu.sorunlu.isChecked() and dd.kart_kutusu.neden.text() == "Kara liste",
+        "detayda misafir kartı görünür")
 yr = main.YeniRezervasyonTab()
 yr.telefon.setText("+90 532 111 22 33")
 yr._misafiri_tani()
@@ -243,7 +245,7 @@ finally:
     QMessageBox.question, QMessageBox.information, QMessageBox.warning = _orj
 
 ana = main.AnaPencere()
-kontrol(ana.tabs.count() == 11, "ana pencere açılır")
+kontrol(ana.tabs.count() == 12, "ana pencere açılır")
 
 print()
 if hatalar:

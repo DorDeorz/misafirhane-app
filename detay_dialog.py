@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QFormLayout, QLabel, QLineEdit,
     QSpinBox, QComboBox, QTextEdit, QPushButton, QDialogButtonBox, QGroupBox,
     QTableWidget, QTableWidgetItem, QHeaderView, QMessageBox, QCheckBox,
-    QDateEdit, QScrollArea, QWidget, QSplitter, QSizePolicy, QInputDialog
+    QDateEdit, QScrollArea, QWidget, QSplitter, QSizePolicy, QInputDialog, QTabWidget
 )
 from PySide6.QtCore import Qt, QDate
 from datetime import date
@@ -19,6 +19,8 @@ import repository
 import tema
 from database import fiyat_tipi_goster, ODEME_SEKILLERI
 from kbs import misafir_tipi, tc_dogrula, YABANCI_ALANLAR
+from notlar_widget import NotlarWidget, zaman_goster
+from misafir_pencere import MisafirKartiKutusu
 
 FIYAT_TIPLERI = ["Sabit", "Uye", "Ozel"]
 
@@ -457,7 +459,9 @@ class RezervasyonDetayDialog(QDialog):
 
         self.kart = repository.misafir_karti_getir(r["telefon"], r["tc_no"])
         if self.kart and self.kart["sorunlu"]:
-            sorunlu = QLabel(f"⚠ Sorunlu misafir olarak işaretli: {self.kart['notu'] or '(not yok)'}")
+            kim = (f" — {self.kart['sorunlu_isaretleyen']}, {zaman_goster(self.kart['sorunlu_zamani'])}"
+                   if self.kart.get("sorunlu_isaretleyen") else "")
+            sorunlu = QLabel(f"⚠ Sorunlu misafir: {self.kart['sorunlu_nedeni'] or '(neden yazılmamış)'}{kim}")
             sorunlu.setWordWrap(True)
             sorunlu.setStyleSheet("color: #922b21; background-color: #f8d0d0; padding: 5px 8px; "
                                   "border-radius: 5px; font-weight: 600;")
@@ -497,13 +501,13 @@ class RezervasyonDetayDialog(QDialog):
         form.addRow("Telefon:", self.telefon)
         self.referans = QLineEdit(r["referans"] or "")
         form.addRow("Referans:", self.referans)
-        self.notlar = QTextEdit(r["notlar"] or "")
-        self.notlar.setMaximumHeight(64)
-        form.addRow("Notlar:", self.notlar)
+        self.geldigi_yer = QLineEdit(_satir_getir(r, "geldigi_yer"))
+        self.geldigi_yer.setPlaceholderText("İl / ülke")
+        form.addRow("Geldiği yer:", self.geldigi_yer)
         form_kutu.setLayout(form)
         sol_lay.addWidget(form_kutu)
         sol_lay.addWidget(self._misafir_karti_kutusu())
-        sol_lay.addStretch(1)
+        sol_lay.addWidget(self._notlar_kutusu(), 1)
         split.addWidget(sol)
 
         # --- SAĞ: odalar tablosu + odada kalan misafirler ---
@@ -683,8 +687,9 @@ class RezervasyonDetayDialog(QDialog):
 
     # ---------------- misafir kartı + hesap dökümü (1.0.5) ----------------
     def _misafir_karti_kutusu(self):
-        """Misafirin önceki konaklamaları + tüm konaklamalarında görünen not
-        ve 'sorunlu misafir' işareti. Not, 'Bilgileri Kaydet' ile kaydedilir."""
+        """Misafirin önceki konaklamaları + puanı ve 'sorunlu misafir' işareti
+        (nedeniyle). Puan/işaret 'Bilgileri Kaydet' ile kaydedilir; misafir
+        notları alttaki Notlar kutusunda (1.0.6)."""
         r = self.rez
         kutu = QGroupBox("Misafir Kartı")
         lay = QVBoxLayout(kutu)
@@ -707,27 +712,49 @@ class RezervasyonDetayDialog(QDialog):
             etiket.setStyleSheet("color: #777;")
         etiket.setWordWrap(True)
         lay.addWidget(etiket)
-
-        kart = self.kart or {}
-        self.kart_notu = QTextEdit(kart.get("notu", ""))
-        self.kart_notu.setMaximumHeight(52)
-        self.kart_notu.setPlaceholderText("Misafir hakkında not (sonraki konaklamalarında da görünür)")
-        lay.addWidget(self.kart_notu)
-        self.kart_sorunlu = QCheckBox("⚠ Sorunlu misafir")
-        self.kart_sorunlu.setToolTip("Bu telefonla yeni rezervasyon alınırken uyarı gösterilir.")
-        self.kart_sorunlu.setChecked(bool(kart.get("sorunlu")))
-        lay.addWidget(self.kart_sorunlu)
+        self.kart_kutusu = MisafirKartiKutusu(self.kart)
+        self.kart_kutusu.setTitle("")
+        self.kart_kutusu.setFlat(True)
+        self.kart_kutusu.layout().setContentsMargins(0, 2, 0, 0)
+        lay.addWidget(self.kart_kutusu)
         return kutu
 
+    def _notlar_kutusu(self):
+        """1.0.6: rezervasyon / misafir / referans notları, yazan ve zamanıyla.
+        Notlar 'Ekle'ye basınca hemen kaydedilir."""
+        r = self.rez
+        kutu = QGroupBox("Notlar")
+        lay = QVBoxLayout(kutu)
+        lay.setContentsMargins(6, 12, 6, 6)
+        sekmeler = QTabWidget()
+        self.rez_notlari = NotlarWidget("rezervasyon", r["id"])
+        kimlik_var = bool(repository.telefon_anahtari(r["telefon"]) or (r["tc_no"] or "").strip())
+        self.misafir_notlari = NotlarWidget(
+            "misafir", (self.kart or {}).get("id"),
+            anahtar_saglayici=self._misafir_karti_ac if kimlik_var else None,
+            bos_mesaj="Misafir notu için telefon ya da TC kaydedilmiş olmalı.")
+        referans = (r["referans"] or "").strip()
+        self.referans_notlari = NotlarWidget(
+            "referans", referans or None,
+            bos_mesaj="Referans notu için önce referans yazılıp kaydedilmeli.")
+        for w, ad in ((self.rez_notlari, "Rezervasyon"), (self.misafir_notlari, "Misafir"),
+                      (self.referans_notlari, "Referans")):
+            sayi = w.not_sayisi()
+            sekmeler.addTab(w, f"{ad} ({sayi})" if sayi else ad)
+            w.degisti.connect(lambda w=w, ad=ad, sekmeler=sekmeler: sekmeler.setTabText(
+                sekmeler.indexOf(w), f"{ad} ({w.not_sayisi()})" if w.not_sayisi() else ad))
+        lay.addWidget(sekmeler)
+        return kutu
+
+    def _misafir_karti_ac(self):
+        r = self.rez
+        self.kart = repository.misafir_karti_olustur(r["telefon"], r["tc_no"], r["ad_soyad"])
+        self.kart_kutusu.kart = self.kart
+        return self.kart["id"]
+
     def _misafir_kartini_kaydet(self):
-        notu = self.kart_notu.toPlainText().strip()
-        sorunlu = self.kart_sorunlu.isChecked()
-        kart = self.kart or {}
-        if notu == (kart.get("notu") or "") and sorunlu == bool(kart.get("sorunlu")):
-            return
-        repository.misafir_karti_kaydet(
-            self.telefon.text().strip(), self.tc_no.text().strip(),
-            self.ad_soyad.text().strip(), notu, sorunlu)
+        self.kart_kutusu.kaydet(self.telefon.text().strip(), self.tc_no.text().strip(),
+                                self.ad_soyad.text().strip())
 
     def hesap_dokumu(self):
         from PySide6.QtWidgets import QFileDialog
@@ -940,6 +967,9 @@ class RezervasyonDetayDialog(QDialog):
         if not self.ad_soyad.text().strip():
             QMessageBox.warning(self, "Eksik Bilgi", "Ad Soyad boş bırakılamaz.")
             return
+        if self.kart_kutusu.sorunlu.isChecked() and not self.kart_kutusu.neden.text().strip():
+            QMessageBox.warning(self, "Eksik Bilgi", "Sorunlu işaretlerken nedenini de yaz.")
+            return
         try:
             repository.rezervasyon_guncelle(
                 self.rez_id,
@@ -947,7 +977,7 @@ class RezervasyonDetayDialog(QDialog):
                 tc_no=self.tc_no.text().strip(),
                 telefon=self.telefon.text().strip(),
                 referans=self.referans.text().strip(),
-                notlar=self.notlar.toPlainText().strip(),
+                geldigi_yer=self.geldigi_yer.text().strip(),
             )
             self._misafir_kartini_kaydet()
         except ValueError as e:

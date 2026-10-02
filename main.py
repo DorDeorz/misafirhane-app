@@ -13,10 +13,11 @@ from PySide6.QtWidgets import (
     QTabWidget, QLabel, QPushButton, QTableWidget, QTableWidgetItem,
     QDateEdit, QComboBox, QLineEdit, QSpinBox, QFormLayout, QMessageBox,
     QHeaderView, QGroupBox, QDialog, QDialogButtonBox, QInputDialog,
-    QFileDialog, QSplitter, QGridLayout, QFrame, QAbstractItemView, QCheckBox
+    QFileDialog, QSplitter, QGridLayout, QFrame, QAbstractItemView, QCheckBox, QCompleter
 )
-from PySide6.QtCore import Qt, QDate, QTimer
+from PySide6.QtCore import Qt, QDate, QTimer, QStringListModel
 from PySide6.QtGui import QColor, QIcon
+from html import escape
 
 import database
 import repository
@@ -29,6 +30,7 @@ from database import fiyat_tipi_goster
 from takvim_widget import TakvimGridWidget
 from detay_dialog import RezervasyonDetayDialog, CheckinDialog, cikis_akisi
 from login_dialog import GirisDialog, IlkKullaniciDialog
+from misafir_pencere import MisafirlerTab
 
 
 def qdate_to_str(qd: QDate) -> str:
@@ -712,24 +714,35 @@ class YeniRezervasyonTab(QWidget):
         self.telefon.setPlaceholderText("Örn: 0532 123 45 67")
         form.addWidget(self.telefon, 1, 1)
 
-        form.addWidget(QLabel("Referans"), 2, 0)
+        form.addWidget(QLabel("Geldiği Yer"), 2, 0)
+        self.geldigi_yer = QLineEdit()
+        self.geldigi_yer.setPlaceholderText("İl / ülke (opsiyonel)")
+        self._geldigi_yer_tamamlayici = QCompleter([], self.geldigi_yer)
+        self._geldigi_yer_tamamlayici.setCaseSensitivity(Qt.CaseInsensitive)
+        self.geldigi_yer.setCompleter(self._geldigi_yer_tamamlayici)
+        form.addWidget(self.geldigi_yer, 2, 1)
+
+        form.addWidget(QLabel("Referans"), 3, 0)
         self.referans = QLineEdit()
         self.referans.setPlaceholderText("Örn: Başkan Ahmet Bey")
-        form.addWidget(self.referans, 2, 1)
+        form.addWidget(self.referans, 3, 1)
 
-        form.addWidget(QLabel("Notlar"), 3, 0)
+        form.addWidget(QLabel("Not"), 4, 0)
         self.notlar = QLineEdit()
-        self.notlar.setPlaceholderText("Opsiyonel — TC No check-in ekranında girilir")
-        form.addWidget(self.notlar, 3, 1)
+        self.notlar.setPlaceholderText("Opsiyonel — rezervasyon notu olarak, adınla kaydedilir")
+        form.addWidget(self.notlar, 4, 1)
         form.setColumnStretch(1, 1)
 
         # 1.0.5: tekrar gelen misafir / misafir notu — telefon girilince dolar
+        # 1.0.6: referans notları da (referans yazılınca) burada görünür
         self.misafir_bilgi = QLabel("")
         self.misafir_bilgi.setWordWrap(True)
         self.misafir_bilgi.setTextFormat(Qt.RichText)
         self.misafir_bilgi.setVisible(False)
-        form.addWidget(self.misafir_bilgi, 4, 0, 1, 2)
+        form.addWidget(self.misafir_bilgi, 5, 0, 1, 2)
         self.telefon.editingFinished.connect(self._misafiri_tani)
+        self.referans.editingFinished.connect(self._misafiri_tani)
+        self._geldigi_yer_listesini_yenile()
         self._misafir_sorunlu = False
         form_kutu.setLayout(form)
         sag_lay.addWidget(form_kutu)
@@ -928,7 +941,9 @@ class YeniRezervasyonTab(QWidget):
         self.ad_soyad.clear()
         self.telefon.clear()
         self.referans.clear()
+        self.geldigi_yer.clear()
         self.notlar.clear()
+        self._geldigi_yer_listesini_yenile()
         self.misafir_bilgi.clear()
         self.misafir_bilgi.setVisible(False)
         self._misafir_sorunlu = False
@@ -942,33 +957,59 @@ class YeniRezervasyonTab(QWidget):
         self._tutar_ozetini_guncelle()
         self.ekle_btn.setEnabled(False)
 
+    def _geldigi_yer_listesini_yenile(self):
+        try:
+            yerler = repository.gecmis_geldigi_yerler()
+        except Exception:
+            yerler = []
+        self._geldigi_yer_tamamlayici.setModel(QStringListModel(yerler, self._geldigi_yer_tamamlayici))
+
     def _misafiri_tani(self):
         """Telefon girilince aynı numarayla önceki konaklamaları ve misafir
-        kartını (not / sorunlu uyarısı) gösterir; ad boşsa son kayıttaki adla
-        doldurur."""
+        kartını (puan, sorunlu uyarısı ve nedeni, son notlar) gösterir; ad ve
+        geldiği yer boşsa son kayıttakiyle doldurur. Referans yazılmışsa
+        referansın notlarını da gösterir."""
+        from notlar_widget import not_satiri_html
         telefon = self.telefon.text().strip()
         self._misafir_sorunlu = False
+        self._misafir_sorun_metni = ""
         try:
             gecmis = repository.misafir_gecmisi(telefon=telefon)
             kart = repository.misafir_karti_getir(telefon=telefon)
+            kart_notlari = repository.notlar_listele("misafir", kart["id"]) if kart else []
+            ref_notlari = repository.notlar_listele("referans", self.referans.text())
         except Exception:
-            gecmis, kart = [], None
+            gecmis, kart, kart_notlari, ref_notlari = [], None, [], []
         parcalar = []
         if gecmis:
             son = gecmis[0]
             parcalar.append(
                 f"🔁 <b>Tekrar gelen misafir:</b> {len(gecmis)} konaklama, son {son['giris']} → "
-                f"{son['cikis']} (Oda {son['odalar']}, {son['ad_soyad']})")
+                f"{son['cikis']} (Oda {son['odalar']}, {escape(son['ad_soyad'])})")
             if not self.ad_soyad.text().strip():
                 self.ad_soyad.setText(son["ad_soyad"])
+            if not self.geldigi_yer.text().strip():
+                for g in gecmis:
+                    yer = (repository.rezervasyon_getir(g["rez_id"]) or {})["geldigi_yer"] or ""
+                    if yer:
+                        self.geldigi_yer.setText(yer)
+                        break
         stil = "color: #1e6f3e; background-color: #e3f4e8;"
         if kart:
+            if kart["puan"]:
+                parcalar.append(f"Puan: {'★' * kart['puan']}{'☆' * (5 - kart['puan'])}")
             if kart["sorunlu"]:
                 self._misafir_sorunlu = True
+                kim = (f" — {kart['sorunlu_isaretleyen']}" if kart["sorunlu_isaretleyen"] else "")
+                self._misafir_sorun_metni = (kart["sorunlu_nedeni"] or "(neden yazılmamış)") + kim
                 stil = "color: #922b21; background-color: #f8d0d0; font-weight: 600;"
-                parcalar.append(f"⚠ <b>Sorunlu misafir:</b> {kart['notu'] or '(not yok)'}")
-            elif kart["notu"]:
-                parcalar.append(f"📝 Not: {kart['notu']}")
+                parcalar.append(f"⚠ <b>Sorunlu misafir:</b> {escape(self._misafir_sorun_metni)}")
+            for n in kart_notlari[:2]:
+                parcalar.append(f"📝 {not_satiri_html(n)}")
+            if len(kart_notlari) > 2:
+                parcalar.append(f"<i>… {len(kart_notlari) - 2} not daha (Misafirler sekmesinde)</i>")
+        for n in ref_notlari[:2]:
+            parcalar.append(f"🤝 Referans notu: {not_satiri_html(n)}")
         self.misafir_bilgi.setText("<br>".join(parcalar))
         self.misafir_bilgi.setStyleSheet(stil + " padding: 4px 6px; border-radius: 5px;")
         self.misafir_bilgi.setVisible(bool(parcalar))
@@ -995,7 +1036,8 @@ class YeniRezervasyonTab(QWidget):
         if self._misafir_sorunlu:
             cevap = QMessageBox.question(
                 self, "Sorunlu Misafir",
-                "Bu telefon numarası 'sorunlu misafir' olarak işaretli.\n"
+                "Bu telefon numarası 'sorunlu misafir' olarak işaretli:\n"
+                f"{self._misafir_sorun_metni}\n\n"
                 "Yine de rezervasyonu kaydetmek istiyor musun?",
                 QMessageBox.Yes | QMessageBox.No, QMessageBox.No
             )
@@ -1032,6 +1074,7 @@ class YeniRezervasyonTab(QWidget):
                 odalar, ad_soyad=ad_soyad, tc_no="", telefon=telefon,
                 referans=referans, notlar=notlar,
                 olusturan_kullanici=self.olusturan_kullanici,
+                geldigi_yer=self.geldigi_yer.text().strip(),
             )
         except Exception as e:
             QMessageBox.warning(self, "Hata", str(e))
@@ -2818,6 +2861,7 @@ class AnaPencere(QMainWindow):
         self.cikis_tab = CikisTab(yenile_callback=self._tumunu_yenile)
         self.yeni_rez_tab = YeniRezervasyonTab(yenile_callback=self._tumunu_yenile, olusturan_kullanici=olusturan)
         self.yonetim_tab = RezervasyonYonetimiTab(yenile_callback=self._tumunu_yenile)
+        self.misafirler_tab = MisafirlerTab(yenile_callback=self._tumunu_yenile)
         self.istatistik_tab = IstatistikTab()
         self.oda_yonetim_tab = OdaYonetimiTab(yenile_callback=self._tumunu_yenile)
         self.ayarlar_tab = AyarlarTab()
@@ -2830,6 +2874,7 @@ class AnaPencere(QMainWindow):
         self.tabs.addTab(self.gunluk_giris_tab, "📋 Günün Girişleri")
         self.tabs.addTab(self.cikis_tab, "🚪 Çıkış")
         self.tabs.addTab(self.yonetim_tab, "🗂️ Rezervasyon Yönetimi")
+        self.tabs.addTab(self.misafirler_tab, "👥 Misafirler")
         self.tabs.addTab(self.istatistik_tab, "📊 İstatistik")
         self.tabs.addTab(self.oda_yonetim_tab, "🔧 Oda Yönetimi")
         self.tabs.addTab(self.ayarlar_tab, "⚙️ Ayarlar")
@@ -2941,6 +2986,7 @@ class AnaPencere(QMainWindow):
         self.cikis_tab.yenile()
         self.yeni_rez_tab.yenile()
         self.yonetim_tab.yenile()
+        self.misafirler_tab.yenile()
         self.istatistik_tab.hesapla()
         self.oda_yonetim_tab.yenile()
         self.islem_gecmisi_tab.yenile()

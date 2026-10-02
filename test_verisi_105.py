@@ -102,6 +102,10 @@ def g(n):
     return (B + timedelta(days=n)).isoformat()
 
 
+GELDIGI_YERLER = ["Ankara", "İstanbul", "İzmir", "Konya", "Bursa", "Kayseri", "Trabzon",
+                  "Antalya", "Eskişehir", "Samsun", "Almanya", ""]
+
+
 def rez(oda, giris_ofs, gece, kisi=1, ad=None, tel=None, fiyat="Sabit", ozel=None,
         referans=None, kullanici=None, odalar=None):
     """Tek (ya da odalar verilirse çok) odalı rezervasyon; oda satırlarını döndürür."""
@@ -110,7 +114,8 @@ def rez(oda, giris_ofs, gece, kisi=1, ad=None, tel=None, fiyat="Sabit", ozel=Non
     rid = R.rezervasyon_olustur(
         satirlar, ad_soyad=ad or random.choice(ISIMLER), telefon=tel or telefon(),
         referans=random.choice(REFERANSLAR) if referans is None else referans,
-        olusturan_kullanici=kullanici or random.choice(KULLANICILAR)[0], gecmis_kontrol=False)
+        olusturan_kullanici=kullanici or random.choice(KULLANICILAR)[0], gecmis_kontrol=False,
+        geldigi_yer=random.choice(GELDIGI_YERLER))
     return rid, [dict(r) for r in R.rezervasyon_odalar_listele(rid)]
 
 
@@ -269,10 +274,14 @@ def main():
         _, ros = rez(oda[no], ofs, gece, kisi=1, ad=s["ad"], tel=s["tel"])
         checkin(ros[0], s["ad"], s["tc"])
         gecmis_odemeleri(ros[0], borc_birak=1 if anahtar == "serkan" and ofs == -40 else 0)
-    R.misafir_karti_kaydet(SADIK["hakan"]["tel"], SADIK["hakan"]["tc"], SADIK["hakan"]["ad"],
-                           "Sessiz oda ister, üst katları tercih ediyor.", False)
+    loglama.set_aktif_kullanici(KULLANICILAR[1][0])
+    hakan = R.misafir_karti_olustur(SADIK["hakan"]["tel"], SADIK["hakan"]["tc"], SADIK["hakan"]["ad"])
+    R.not_ekle("misafir", hakan["id"], "Sessiz oda ister, üst katları tercih ediyor.")
+    R.misafir_karti_kaydet(SADIK["hakan"]["tel"], SADIK["hakan"]["tc"], SADIK["hakan"]["ad"], puan=5)
     R.misafir_karti_kaydet(SADIK["serkan"]["tel"], SADIK["serkan"]["tc"], SADIK["serkan"]["ad"],
-                           "Odada hasar bıraktı, ödemeyi geciktirdi.", True)
+                           puan=1, sorunlu=True, sorunlu_nedeni="Odada hasar bıraktı, ödemeyi geciktirdi.")
+    R.not_ekle("referans", "Başkan Ahmet Bey", "Misafirleri genelde hafta sonu gelir, fatura isterler.")
+    loglama.set_aktif_kullanici(None)
     # Serkan ileri tarihli rezervasyon (detayda kırmızı uyarı görünür)
     rez(oda[15], 12, 2, kisi=1, ad=SADIK["serkan"]["ad"], tel=SADIK["serkan"]["tel"])
 
