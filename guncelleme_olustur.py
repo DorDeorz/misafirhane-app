@@ -14,6 +14,14 @@ Kullanim (proje klasorunde):
          Kurulum Aracı'nda gomulu kullanilir. Ayri bir
          Misafirhane_Kurulum_<SURUM>.exe artik URETILMEZ — tek kurulum
          araci (Misafirhane_Kurulumu_<SURUM>.exe) tum isleri yapar.
+         --tam ayrica Kurulum Aracı'nı (dist/Misafirhane_Kurulumu_<SURUM>.exe)
+         ve tek dosya surumu (dist/Misafirhane_<SURUM>.exe) de derler;
+         yani release'in 3 exe'si tek komutla cikar.
+
+Antivirus yanlis alarmlarini azaltmak icin (bkz. docs/YANLIS_ALARM.md):
+  - tum exe'lere surum/yayinci bilgisi (Ozellikler > Ayrintilar) gomulur,
+  - UPX sikistirmasi kapali (--noupx); UPX'li exe'ler cok daha sik
+    "virus" diye isaretleniyor.
 
 Cikti: dagitim/ klasoru (gitignore'ludur). Masauette dagitim, diger
 bilgisayarda calistirilacak guncelleme exe'sidir.
@@ -38,6 +46,57 @@ YENI_KLASOR = os.path.join(ROOT, "dagitim", f"guncelle_{SURUM}")
 MANIFEST = os.path.join(ROOT, "dagitim", "son_manifest.json")
 GUNCELLEME_EXE = os.path.join(ROOT, "dagitim", f"Misafirhane_Guncelleme_{SURUM}.exe")
 DIST_APP = os.path.join(ROOT, "dist", "Misafirhane")
+SURUM_BILGI_KLASORU = os.path.join(ROOT, "build", "surum_bilgisi")
+YAYINCI = "DorDeorz"
+
+# Her PyInstaller cagrisinda ortak bayraklar: UPX kapali (yanlis alarm azaltir).
+PYI_ORTAK = ["--noconfirm", "--clean", "--noupx"]
+
+
+def _surum_dortlu():
+    """'1.0.6' -> (1, 0, 6, 0); Windows surum alani 4 sayi ister."""
+    parcalar = [int(p) for p in SURUM.split(".") if p.isdigit()][:4]
+    return tuple(parcalar + [0] * (4 - len(parcalar)))
+
+
+def surum_bilgisi_dosyasi(ad, aciklama, orijinal_ad):
+    """PyInstaller --version-file icin VSVersionInfo dosyasi yazar, yolunu dondurur.
+    Imzasiz exe'lerde bos surum bilgisi antivirus sezgisellerinde puan dusurur."""
+    dortlu = _surum_dortlu()
+    metin = f"""# UTF-8
+VSVersionInfo(
+  ffi=FixedFileInfo(
+    filevers={dortlu},
+    prodvers={dortlu},
+    mask=0x3f,
+    flags=0x0,
+    OS=0x40004,
+    fileType=0x1,
+    subtype=0x0,
+    date=(0, 0)
+  ),
+  kids=[
+    StringFileInfo([
+      StringTable(
+        '041f04b0',
+        [StringStruct('CompanyName', {YAYINCI!r}),
+         StringStruct('FileDescription', {aciklama!r}),
+         StringStruct('FileVersion', {SURUM!r}),
+         StringStruct('InternalName', {ad!r}),
+         StringStruct('LegalCopyright', {'(c) ' + YAYINCI!r}),
+         StringStruct('OriginalFilename', {orijinal_ad!r}),
+         StringStruct('ProductName', {UYGULAMA_ADI!r}),
+         StringStruct('ProductVersion', {SURUM!r})])
+    ]),
+    VarFileInfo([VarStruct('Translation', [0x041f, 1200])])
+  ]
+)
+"""
+    os.makedirs(SURUM_BILGI_KLASORU, exist_ok=True)
+    yol = os.path.join(SURUM_BILGI_KLASORU, f"{ad}.txt")
+    with open(yol, "w", encoding="utf-8") as f:
+        f.write(metin)
+    return yol
 
 
 def dosya_ozet(yol):
@@ -67,10 +126,12 @@ def surum_dosyasi_yaz():
 def uygulamayi_derle():
     print(f"[1/4] Uygulama derleniyor (PyInstaller, {SURUM}) ...")
     komut = [
-        sys.executable, "-m", "PyInstaller",
-        "--noconfirm", "--clean", "--onedir", "--windowed",
+        sys.executable, "-m", "PyInstaller", *PYI_ORTAK,
+        "--onedir", "--windowed",
         "--name", "Misafirhane",
         "--icon", os.path.join(ROOT, "assets", "misafirhane.ico"),
+        "--version-file", surum_bilgisi_dosyasi(
+            "Misafirhane", UYGULAMA_ADI, "Misafirhane.exe"),
         "--add-data", os.path.join(ROOT, "assets", "misafirhane.ico") + ";assets",
         "main.py",
     ]
@@ -135,9 +196,12 @@ def guncelleme_paketi():
 def guncelleme_exe():
     print(f"[3/4] Guncelleme exe uretiliyor ...")
     subprocess.run([
-        sys.executable, "-m", "PyInstaller",
-        "--noconfirm", "--clean", "--onefile", "--windowed", "--uac-admin",
+        sys.executable, "-m", "PyInstaller", *PYI_ORTAK,
+        "--onefile", "--windowed", "--uac-admin",
         "--name", "Misafirhane_Guncelleme",
+        "--version-file", surum_bilgisi_dosyasi(
+            "Misafirhane_Guncelleme", UYGULAMA_ADI + " Güncelleme Aracı",
+            f"Misafirhane_Guncelleme_{SURUM}.exe"),
         "--add-data", YENI_KLASOR + ";patch",
         os.path.join(ROOT, "guncelleme_araci", "main.py"),
     ], cwd=ROOT, check=True)
@@ -164,6 +228,47 @@ def tam_kurulum():
         print("  Ayri Misafirhane_Kurulum_<surum>.exe artik uretilmiyor; "
               "tek Kurulum Aracı (Misafirhane_Kurulumu) tum kurulum "
               "islemlerini karsiliyor.")
+
+
+def kurulum_araci_exe():
+    """Kurulum Aracı tek exe (Inno motoru gomulu). Motor yoksa atlanir."""
+    motor = os.path.join(ROOT, "dist", "kurulum", "Misafirhane_Kurulum.exe")
+    if not os.path.exists(motor):
+        print("  Kurulum motoru yok; Kurulum Aracı atlandi.")
+        return
+    ad = f"Misafirhane_Kurulumu_{SURUM}"
+    print(f"[5] Kurulum Aracı derleniyor ({ad}.exe) ...")
+    ikon = os.path.join(ROOT, "assets", "misafirhane.ico")
+    subprocess.run([
+        sys.executable, "-m", "PyInstaller", *PYI_ORTAK,
+        "--onefile", "--windowed",
+        "--name", ad,
+        "--icon", ikon,
+        "--version-file", surum_bilgisi_dosyasi(
+            ad, UYGULAMA_ADI + " Kurulum Aracı", ad + ".exe"),
+        "--add-data", motor + ";.",
+        "--add-data", os.path.join(ROOT, "versiyon.py") + ";.",
+        "--add-data", ikon + ";assets",
+        "kurulum_araci.py",
+    ], cwd=ROOT, check=True)
+    print(f"  Kurulum Aracı: {os.path.join(ROOT, 'dist', ad + '.exe')}")
+
+
+def standalone_exe():
+    """Kurulumsuz calisan tek dosya surum."""
+    ad = f"Misafirhane_{SURUM}"
+    print(f"[6] Tek dosya surum derleniyor ({ad}.exe) ...")
+    ikon = os.path.join(ROOT, "assets", "misafirhane.ico")
+    subprocess.run([
+        sys.executable, "-m", "PyInstaller", *PYI_ORTAK,
+        "--onefile", "--windowed",
+        "--name", ad,
+        "--icon", ikon,
+        "--version-file", surum_bilgisi_dosyasi(ad, UYGULAMA_ADI, ad + ".exe"),
+        "--add-data", ikon + ";assets",
+        "main.py",
+    ], cwd=ROOT, check=True)
+    print(f"  Tek dosya surum: {os.path.join(ROOT, 'dist', ad + '.exe')}")
 
 
 def manifesti_guncelle(yeni_map):
@@ -196,6 +301,8 @@ def main():
         manifesti_guncelle(manifest_olustur(DIST_APP))
         if arg_tam:
             tam_kurulum()
+            kurulum_araci_exe()
+            standalone_exe()
     print(f"\nBitti. Surum {SURUM} paketi dagitim/ altinda.")
 
 

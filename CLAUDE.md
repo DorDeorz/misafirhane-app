@@ -813,7 +813,16 @@ kullanıcı (`loglama.AKTIF_KULLANICI`).
    - `dagitim\Misafirhane_Guncelleme_<SURUM>.exe` (onefile, UAC),
    - Inno kurulum **motoru** `dist\kurulum\Misafirhane_Kurulum.exe`
      (artık dagitim'e kopyalanmaz).
-3. **Kurulum Aracı** tek exe (manuel, repoya betik eklenmedi):
+   - (2 Ekim 2026'dan beri) `--tam` ayrıca Kurulum Aracı'nı
+     (`dist\Misafirhane_Kurulumu_<SURUM>.exe`) ve Standalone'u
+     (`dist\Misafirhane_<SURUM>.exe`) da derler; 3. ve 4. adımdaki elle
+     komutlar artık yalnızca yedek. Bütün PyInstaller çağrıları `--noupx`
+     ve `--version-file` (sürüm/yayıncı bilgisi, `build\surum_bilgisi\`)
+     ile çalışır; Inno motoruna da `VersionInfo*` eklendi. Amaç antivirüs
+     yanlış alarmlarını azaltmak (exe'ler imzasız; kullanıcı 2 Ekim 2026'da
+     sertifika yerine şimdilik yalnızca bunu seçti). Release sonrası
+     VirusTotal + Microsoft yanlış alarm bildirimi: `docs/YANLIS_ALARM.md`.
+3. **Kurulum Aracı** tek exe (artık `--tam` yapıyor; elle komut yedek):
    ```
    pyinstaller --noconfirm --clean --onefile --windowed \
      --name Misafirhane_Kurulumu_<SURUM> \
@@ -872,9 +881,11 @@ kullanıcı (`loglama.AKTIF_KULLANICI`).
   commit'lenmemişti** (yerelde vardı, push edilmemişti) — 1.0.4.3 docs
   commit'iyle ilk kez repoya girdi. Artık her `git clone`/`pull` ile gelir.
 - **Bilinen eksikler:**
-  1. Kurulum Aracı ve standalone derleme adımları `guncelleme_olustur.py`'de
-     değil (manuel komutlar, yukarıda 6. maddede). Öneri: betiğe A2 adımı
-     (Kurulum Aracı + standalone) eklenip tek komutta tüm release üretmek.
+  1. ~~Kurulum Aracı ve standalone derleme adımları betikte değil~~ — 2 Ekim
+     2026'da `guncelleme_olustur.py --tam`'a eklendi; aynı gün ev
+     masaüstünde ayrı bir klonda derlendi (PyInstaller 6.22.3): 3 exe tek
+     komutla çıktı, sürüm bilgileri doğru, Defender yerel taraması temiz. Exe'ler hâlâ imzasız; kod imzalama araştırması
+     ve önerisi `docs/YANLIS_ALARM.md` sonunda.
   2. Ev makinesinde daha önce bilinen `guncelleme_olustur.py` A+B (TAM paket)
      ve `guncelle_araci/guncelle.py` sürüm kapısı değişiklikleri hâlâ bu
      repoya taşınmadı (laptop oturumu bunu ele almadı).
