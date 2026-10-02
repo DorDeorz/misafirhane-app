@@ -730,6 +730,13 @@ kullanıcı (`loglama.AKTIF_KULLANICI`).
   düğmeleri kenarın "ARAÇLAR" bölümüne taşındı. ☰ ya da Ctrl+B ile
   daraltılır (yalnız simge, ad ipucunda); durum `ayarlar.kenar_cubugu_dar`.
   QSS `tema.py`'de iki temada da (`#kenar_cubugu`, `#kenar_btn`).
+  Dar halde dikey kaydırma çubuğu gizlenir (kullanıcı isteği).
+- **Donma düzeltmesi (Windows denemesinde bulundu):** Misafirler alt
+  sekmesine geri dönünce ~40 sn donuyordu; görünür `QTableWidget`'ta
+  `ResizeToContents` kolonları her `setItem`'da yeniden ölçüyordu.
+  `misafir_pencere._toplu_doldur(t)` doldurma süresince kolonları
+  `Interactive` yapıp sonunda tek seferde ölçüyor (43 sn → 0,06 sn).
+  Yeni bir çok satırlı tablo doldururken bu yardımcıyı kullan.
 - **Test:** yeni `konaklayan_listesi_test.py` (iş katmanı + offscreen
   arayüz + kenar çubuğu); `yeni_ozellik_test.py` yeni kart API'sine
   uyarlandı; `hata_duzeltme_test.py`, `kbs_test.py`,

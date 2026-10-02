@@ -49,7 +49,7 @@ class KenarCubugu(QFrame):
         self.daralt_btn.clicked.connect(lambda: self.daralt(not self.dar))
         dis.addWidget(self.daralt_btn, 0, Qt.AlignLeft)
 
-        alan = QScrollArea()
+        alan = self._alan = QScrollArea()
         alan.setObjectName("kenar_alan")
         alan.setWidgetResizable(True)
         alan.setFrameShape(QFrame.NoFrame)
@@ -130,6 +130,10 @@ class KenarCubugu(QFrame):
             self._metni_ayarla(b, ikon, ad)
         for etiket in self._basliklar:
             etiket.setVisible(not self.dar)
+        # dar halde kaydırma çubuğu simgelerin yanında yer kaplayıp kötü
+        # duruyor; gizlenir (sığmazsa fare tekerleğiyle yine kayar)
+        self._alan.setVerticalScrollBarPolicy(
+            Qt.ScrollBarAlwaysOff if self.dar else Qt.ScrollBarAsNeeded)
 
     def _genislik_ayarla(self, genislik):
         self.setMinimumWidth(genislik)

@@ -217,6 +217,7 @@ kontrol(any(str(c.value).startswith("'=") for r in ws.iter_rows() for c in r if 
 
 print("Arayüz (offscreen)")
 from PySide6.QtWidgets import QApplication, QMessageBox
+from PySide6.QtCore import Qt
 uyg = QApplication.instance() or QApplication(sys.argv)
 import misafir_pencere
 html = misafir_pencere.konaklayan_listesi_html(g(-30), g(5), R.konaklayan_listesi(g(-30), g(5)))
@@ -242,6 +243,12 @@ t._bugun()
 kontrol(t.k_bas.date() == t.k_bit.date(), "Bugün düğmesi")
 t.sekmeler.setCurrentIndex(2)
 kontrol(t.ref_tablo.rowCount() == 1, "referanslar alt sekmesi")
+t.show()
+t.sekmeler.setCurrentIndex(0)
+kontrol(t.misafir_tablo.rowCount() == 2 and t.misafir_tablo.horizontalHeader().sectionResizeMode(0)
+        == misafir_pencere.QHeaderView.ResizeToContents,
+        "Misafirler alt sekmesine geri dönülür, kolon boyutlandırma geri gelir")
+t.hide()
 
 md = misafir_pencere.MisafirDetayDialog(ali)
 kontrol(md.konaklamalar.rowCount() == 2 and md.kart_kutusu.puan.currentData() == 4
@@ -310,9 +317,11 @@ k.daralt(True, animasyonlu=False)
 kontrol(k.width() <= k.DAR and k._sayfa_butonlari[0].text() == "➕"
         and "Yeni Rezervasyon" in k._sayfa_butonlari[0].toolTip(), "daralınca yalnız simge, ad ipucunda")
 kontrol(database.get_ayar("kenar_cubugu_dar") == "1", "dar durum kaydedilir")
+kontrol(k._alan.verticalScrollBarPolicy() == Qt.ScrollBarAlwaysOff, "dar halde kaydırma çubuğu gizli")
 kontrol(main.AnaPencere().kenar.dar, "uygulama aynı (dar) halde açılır")
 k.daralt(False, animasyonlu=False)
 kontrol(k.maximumWidth() == k.GENIS and "Yeni Rezervasyon" in k._sayfa_butonlari[0].text(), "genişletilir")
+kontrol(k._alan.verticalScrollBarPolicy() == Qt.ScrollBarAsNeeded, "geniş halde kaydırma çubuğu gerekirse görünür")
 
 print()
 if hatalar:

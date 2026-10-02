@@ -14,6 +14,7 @@ Misafirler sekmesi (1.0.6).
   ve referansa ait not geçmişi.
 """
 
+from contextlib import contextmanager
 from datetime import date, datetime, timedelta
 from html import escape
 
@@ -61,6 +62,25 @@ def _tablo(basliklar, esnek_kolon):
     return t
 
 
+@contextmanager
+def _toplu_doldur(t):
+    """Tabloyu satır satır doldururken kolonların 'içeriğe göre boyutlan'
+    ayarını askıya alır: görünür tabloda bu ayar her hücrede bütün kolonu
+    yeniden ölçtüğünden birkaç yüz satır onlarca saniye donduruyordu.
+    Doldurma bitince kolonlar tek seferde ölçülür."""
+    hh = t.horizontalHeader()
+    modlar = [hh.sectionResizeMode(k) for k in range(t.columnCount())]
+    for k in range(t.columnCount()):
+        hh.setSectionResizeMode(k, QHeaderView.Interactive)
+    t.setUpdatesEnabled(False)
+    try:
+        yield t
+    finally:
+        for k, mod in enumerate(modlar):
+            hh.setSectionResizeMode(k, mod)
+        t.setUpdatesEnabled(True)
+
+
 def _hucre(metin, veri=None, sirala=None):
     item = QTableWidgetItem(str(metin) if metin is not None else "")
     if veri is not None:
@@ -74,19 +94,20 @@ def _konaklamalar_tablosu(konaklamalar, ad_kolonu=False):
         basliklar += ["Ad Soyad", "Telefon"]
     basliklar += ["Geldiği Yer", "Referans", "Durum"]
     t = _tablo(basliklar, len(basliklar) - 2)
-    t.setRowCount(len(konaklamalar))
-    bugun = date.today().isoformat()
-    for i, k in enumerate(konaklamalar):
-        if "iceride" in k:
-            durum = "İçeride" if k["iceride"] else "Kaldı"
-        else:
-            durum = ("Kaldı" if k["cikis"] <= bugun else "İçeride") if k["checkin"] else "Bekleniyor"
-        degerler = [tarih_goster(k["giris"]), tarih_goster(k["cikis"]), k["gece"], k["odalar"]]
-        if ad_kolonu:
-            degerler += [k["ad_soyad"], k["telefon"] or ""]
-        degerler += [k["geldigi_yer"], k["referans"] or "", durum]
-        for col, v in enumerate(degerler):
-            t.setItem(i, col, _hucre(v, k["rez_id"] if col == 0 else None))
+    with _toplu_doldur(t):
+        t.setRowCount(len(konaklamalar))
+        bugun = date.today().isoformat()
+        for i, k in enumerate(konaklamalar):
+            if "iceride" in k:
+                durum = "İçeride" if k["iceride"] else "Kaldı"
+            else:
+                durum = ("Kaldı" if k["cikis"] <= bugun else "İçeride") if k["checkin"] else "Bekleniyor"
+            degerler = [tarih_goster(k["giris"]), tarih_goster(k["cikis"]), k["gece"], k["odalar"]]
+            if ad_kolonu:
+                degerler += [k["ad_soyad"], k["telefon"] or ""]
+            degerler += [k["geldigi_yer"], k["referans"] or "", durum]
+            for col, v in enumerate(degerler):
+                t.setItem(i, col, _hucre(v, k["rez_id"] if col == 0 else None))
     return t
 
 
@@ -384,21 +405,22 @@ class MisafirlerTab(QWidget):
             satirlar = [s for s in satirlar if s["sorunlu"]]
         self._misafirler = satirlar
         t = self.misafir_tablo
-        t.setRowCount(len(satirlar))
-        for i, m in enumerate(satirlar):
-            durum = []
-            if m["sorunlu"]:
-                durum.append(f"⚠ Sorunlu: {m['sorunlu_nedeni']}" if m["sorunlu_nedeni"] else "⚠ Sorunlu")
-            if m["iceride"]:
-                durum.append("🛏 İçeride")
-            degerler = [m["ad_soyad"], m["telefon"], m["geldigi_yer"], m["konaklama"], m["toplam_gece"],
-                        tarih_goster(m["son_giris"]), tarih_goster(m["son_cikis"]), yildiz(m["puan"]),
-                        " · ".join(durum), f"📝 {m['not_sayisi']}" if m["not_sayisi"] else ""]
-            for col, v in enumerate(degerler):
-                item = _hucre(v, i if col == 0 else None)
+        with _toplu_doldur(t):
+            t.setRowCount(len(satirlar))
+            for i, m in enumerate(satirlar):
+                durum = []
                 if m["sorunlu"]:
-                    item.setForeground(QColor("#922b21"))
-                t.setItem(i, col, item)
+                    durum.append(f"⚠ Sorunlu: {m['sorunlu_nedeni']}" if m["sorunlu_nedeni"] else "⚠ Sorunlu")
+                if m["iceride"]:
+                    durum.append("🛏 İçeride")
+                degerler = [m["ad_soyad"], m["telefon"], m["geldigi_yer"], m["konaklama"], m["toplam_gece"],
+                            tarih_goster(m["son_giris"]), tarih_goster(m["son_cikis"]), yildiz(m["puan"]),
+                            " · ".join(durum), f"📝 {m['not_sayisi']}" if m["not_sayisi"] else ""]
+                for col, v in enumerate(degerler):
+                    item = _hucre(v, i if col == 0 else None)
+                    if m["sorunlu"]:
+                        item.setForeground(QColor("#922b21"))
+                    t.setItem(i, col, item)
         self.misafir_ozet.setText(f"{len(satirlar)} misafir · çift tıkla: konaklamaları, puan ve notlar")
 
     def _misafir_ac(self, *_):
@@ -500,10 +522,11 @@ class MisafirlerTab(QWidget):
             return
         hassas = self.hassas.isChecked()
         t = self.k_tablo
-        t.setRowCount(len(self._konaklayanlar))
-        for i, k in enumerate(self._konaklayanlar):
-            for col, v in enumerate(export.konaklayan_listesi_satiri(i + 1, k, True)):
-                t.setItem(i, col, _hucre(v, k["rez_id"] if col == 0 else None))
+        with _toplu_doldur(t):
+            t.setRowCount(len(self._konaklayanlar))
+            for i, k in enumerate(self._konaklayanlar):
+                for col, v in enumerate(export.konaklayan_listesi_satiri(i + 1, k, True)):
+                    t.setItem(i, col, _hucre(v, k["rez_id"] if col == 0 else None))
         for col in (12, 13):
             t.setColumnHidden(col, not hassas)
         self.k_ozet.setText(f"{len(self._konaklayanlar)} kişi · {tarih_goster(bas)} – {tarih_goster(bit)}"
@@ -576,12 +599,13 @@ class MisafirlerTab(QWidget):
         except Exception:
             satirlar = []
         t = self.ref_tablo
-        t.setRowCount(len(satirlar))
-        for i, r in enumerate(satirlar):
-            degerler = [r["referans"], r["rezervasyon"], r["konaklayan"], tarih_goster(r["son_giris"]),
-                        f"📝 {r['not_sayisi']}" if r["not_sayisi"] else ""]
-            for col, v in enumerate(degerler):
-                t.setItem(i, col, _hucre(v, r["referans"] if col == 0 else None))
+        with _toplu_doldur(t):
+            t.setRowCount(len(satirlar))
+            for i, r in enumerate(satirlar):
+                degerler = [r["referans"], r["rezervasyon"], r["konaklayan"], tarih_goster(r["son_giris"]),
+                            f"📝 {r['not_sayisi']}" if r["not_sayisi"] else ""]
+                for col, v in enumerate(degerler):
+                    t.setItem(i, col, _hucre(v, r["referans"] if col == 0 else None))
 
     def _referans_ac(self, *_):
         satir = self.ref_tablo.currentRow()
