@@ -15,6 +15,7 @@ AppVerName=Misafirhane Rezervasyon {#MyAppVersion}
 ; Exe'nin Ozellikler > Ayrintilar bilgisi (antivirus yanlis alarmlarini azaltir)
 VersionInfoVersion={#MyAppVersion}
 VersionInfoCompany=DorDeorz
+VersionInfoCopyright=(c) DorDeorz
 VersionInfoDescription=Misafirhane Rezervasyon Kurulum Motoru
 VersionInfoProductName=Misafirhane Rezervasyon
 VersionInfoProductVersion={#MyAppVersion}

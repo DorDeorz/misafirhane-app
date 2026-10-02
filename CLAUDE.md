@@ -882,8 +882,9 @@ kullanıcı (`loglama.AKTIF_KULLANICI`).
   commit'iyle ilk kez repoya girdi. Artık her `git clone`/`pull` ile gelir.
 - **Bilinen eksikler:**
   1. ~~Kurulum Aracı ve standalone derleme adımları betikte değil~~ — 2 Ekim
-     2026'da `guncelleme_olustur.py --tam`'a eklendi (Windows'ta henüz
-     derlenip denenmedi). Exe'ler hâlâ imzasız; kod imzalama araştırması
+     2026'da `guncelleme_olustur.py --tam`'a eklendi; aynı gün ev
+     masaüstünde ayrı bir klonda derlendi (PyInstaller 6.22.3): 3 exe tek
+     komutla çıktı, sürüm bilgileri doğru, Defender yerel taraması temiz. Exe'ler hâlâ imzasız; kod imzalama araştırması
      ve önerisi `docs/YANLIS_ALARM.md` sonunda.
   2. Ev makinesinde daha önce bilinen `guncelleme_olustur.py` A+B (TAM paket)
      ve `guncelle_araci/guncelle.py` sürüm kapısı değişiklikleri hâlâ bu
