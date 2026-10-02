@@ -741,8 +741,8 @@ kullanıcı (`loglama.AKTIF_KULLANICI`).
   arayüz + kenar çubuğu); `yeni_ozellik_test.py` yeni kart API'sine
   uyarlandı; `hata_duzeltme_test.py`, `kbs_test.py`,
   `oda_degistir_kbs_test.py` geçti. `test_verisi_105.py` geldiği yer, puan,
-  sorunlu nedeni ve not örnekleri üretiyor. Windows'ta elle deneme henüz
-  yapılmadı; README ekran görüntüleri (`docs/ekran/`) hâlâ eski üst sekmeli
+  sorunlu nedeni ve not örnekleri üretiyor. Kullanıcı 2 Ekim 2026'da ev
+  masaüstünde test verisiyle elle denedi (1c8889a), sorunsuz; README ekran görüntüleri (`docs/ekran/`) hâlâ eski üst sekmeli
   düzeni gösteriyor.
 
 ---
