@@ -7,7 +7,8 @@ misafirhane.db dosyasındadır.
 """
 
 from openpyxl import Workbook
-from openpyxl.styles import Font, PatternFill, Alignment
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from openpyxl.utils import get_column_letter
 from datetime import datetime
 
 import repository
@@ -55,6 +56,7 @@ def rezervasyonlari_disa_aktar(dosya_yolu, durum="aktif", satirlar=None):
     ]
     _baslik_satiri_yaz(ws, basliklar)
 
+    rez_notlari = repository.notlar_metni("rezervasyon")
     rows = satirlar if satirlar is not None else repository.rezervasyon_listesi(durum)
     if satirlar is None and durum == "gelmedi":
         rows = [r for r in repository.rezervasyon_listesi("hepsi")
@@ -71,7 +73,7 @@ def rezervasyonlari_disa_aktar(dosya_yolu, durum="aktif", satirlar=None):
             _guvenli_hucre(r["telefon"] or ""), r["toplam_kisi"], r["giris_tarihi"], r["toplam_gece"],
             r["cikis_tarihi"] or "", fiyat_metni, toplam,
             _guvenli_hucre(r["referans"] or ""), r["oda_sayisi"], r["olusturan_kullanici"] or "",
-            r["olusturma_tarihi"] or "", r["durum_etiket"] or "", _guvenli_hucre(r["notlar"] or "")
+            r["olusturma_tarihi"] or "", r["durum_etiket"] or "", _guvenli_hucre(rez_notlari.get(str(r["id"]), ""))
         ])
 
     for col_letter, genislik in zip(
@@ -229,3 +231,97 @@ def gun_sonu_kasa_disa_aktar(dosya_yolu, tarih_str):
         ws.column_dimensions[col_letter].width = genislik
     wb.save(dosya_yolu)
     return len(kasa["satirlar"])
+
+
+def _tarih_tr(s):
+    """'2026-10-02' -> '02.10.2026'."""
+    try:
+        return datetime.strptime(s[:10], "%Y-%m-%d").strftime("%d.%m.%Y")
+    except (TypeError, ValueError):
+        return s or ""
+
+
+def konaklayan_listesi_basliklari(hassas=False):
+    basliklar = ["No", "Ad Soyad", "TC / Belge No", "Uyruk", "Telefon", "Geldiği Yer",
+                 "Oda", "Giriş", "Çıkış", "Gece", "Referans", "Kaydı Alan"]
+    if hassas:
+        basliklar += ["Puan", "Sorunlu"]
+    return basliklar
+
+
+def konaklayan_listesi_satiri(no, k, hassas=False):
+    """Konaklayan listesinin tek satırı (Excel ve yazdırma aynı sütunları kullanır)."""
+    cikis = _tarih_tr(k["cikis"]) + (" (içeride)" if k["iceride"] else "")
+    satir = [no, k["ad_soyad"], k["tc_no"], k["uyruk"], k["telefon"], k["geldigi_yer"],
+             k["odalar"], _tarih_tr(k["giris"]), cikis, k["gece"], k["referans"], k["alan"]]
+    if hassas:
+        satir += ["★" * k["puan"] if k["puan"] else "",
+                  ("Evet: " + k["sorunlu_nedeni"]) if k["sorunlu"] and k["sorunlu_nedeni"]
+                  else ("Evet" if k["sorunlu"] else "")]
+    return satir
+
+
+def konaklayan_listesi_disa_aktar(dosya_yolu, baslangic_str, bitis_str, hassas=False):
+    """Tarih aralığında kalan kişilerin listesi: kişi başı bir satır, başlık
+    satırı sabit, sütun genişlikleri ayarlı, A4 yatay tek sayfa genişliğinde
+    yazdırılmaya hazır. hassas=True ise puan ve sorunlu bilgisi de eklenir
+    (varsayılan kapalı: dosya bilgisayardan çıkabilir). Döner: kişi sayısı."""
+    satirlar = repository.konaklayan_listesi(baslangic_str, bitis_str)
+    basliklar = konaklayan_listesi_basliklari(hassas)
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Konaklayan Listesi"
+
+    tesis = _tesis_adi()
+    aralik = _tarih_tr(baslangic_str) if baslangic_str == bitis_str else \
+        f"{_tarih_tr(baslangic_str)} – {_tarih_tr(bitis_str)}"
+    ws.append([f"{tesis} — Konaklayan Listesi ({aralik})"])
+    ws.cell(row=1, column=1).font = Font(bold=True, size=14)
+    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=len(basliklar))
+    ws.append([f"{len(satirlar)} kişi · Oluşturma: {datetime.now().strftime('%d.%m.%Y %H:%M')}"])
+    ws.cell(row=2, column=1).font = Font(italic=True, color="666666")
+    ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=len(basliklar))
+
+    ws.append(basliklar)
+    ince = Side(style="thin", color="BBBBBB")
+    kenar = Border(left=ince, right=ince, top=ince, bottom=ince)
+    for col in range(1, len(basliklar) + 1):
+        hucre = ws.cell(row=3, column=col)
+        hucre.font = Font(bold=True, color="FFFFFF")
+        hucre.fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
+        hucre.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        hucre.border = kenar
+
+    zebra = PatternFill(start_color="F2F5FB", end_color="F2F5FB", fill_type="solid")
+    for i, k in enumerate(satirlar, start=1):
+        ws.append([_guvenli_hucre(v) if isinstance(v, str) else v
+                   for v in konaklayan_listesi_satiri(i, k, hassas)])
+        for col in range(1, len(basliklar) + 1):
+            hucre = ws.cell(row=ws.max_row, column=col)
+            hucre.border = kenar
+            hucre.alignment = Alignment(vertical="top", wrap_text=col in (2, 6, 11) or col > 12)
+            if i % 2 == 0:
+                hucre.fill = zebra
+
+    genislikler = [5, 24, 15, 10, 16, 14, 8, 11, 17, 6, 18, 12, 8, 26]
+    for col in range(1, len(basliklar) + 1):
+        ws.column_dimensions[get_column_letter(col)].width = genislikler[col - 1]
+
+    ws.freeze_panes = "A4"
+    if satirlar:
+        ws.auto_filter.ref = f"A3:{get_column_letter(len(basliklar))}{ws.max_row}"
+    ws.print_title_rows = "3:3"
+    ws.page_setup.orientation = "landscape"
+    ws.page_setup.paperSize = ws.PAPERSIZE_A4
+    ws.page_setup.fitToWidth = 1
+    ws.page_setup.fitToHeight = 0
+    ws.sheet_properties.pageSetUpPr.fitToPage = True
+    ws.print_options.horizontalCentered = True
+    ws.oddFooter.center.text = "Sayfa &P / &N"
+    wb.save(dosya_yolu)
+    return len(satirlar)
+
+
+def _tesis_adi():
+    import database
+    return database.get_ayar("tesis_adi", "") or "Misafirhane"

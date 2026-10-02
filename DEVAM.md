@@ -3,6 +3,17 @@
 Bu dosya, evdeki masaüstü bilgisayardaki opencode oturumunun kaldığı yerden devam
 edebilmesi için hazırlandı. İlk iş olarak okuyun.
 
+## DEVAM (2 Ekim 2026) — 1.0.6: Konaklayan Listesi + sol kenar çubuğu (Release YOK)
+
+Kullanıcının "Konaklayan listesi" fikri uygulamanın içine yapıldı (ayrıntı:
+`CLAUDE.md` madde 4 "1.0.6"): 👥 Misafirler sekmesi (misafir listesi, misafir
+kartı: puan + sorunlu nedeni/işaretleyen + notlar; Konaklayan Listesi Excel +
+yazdırma; Referanslar), yazanı ve zamanı tutulan not geçmişi, "Geldiği Yer".
+Kararlar: kara liste yok (sorunlu işareti uyarır, engellemez), puan/sorunlu
+Excel'e yalnızca kutucukla. Ardından sekmeler daraltılabilir sol kenar
+çubuğuna taşındı (☰ / Ctrl+B). Yeni test: `konaklayan_listesi_test.py`.
+Sonraki adım: Windows'ta elle deneme, README ekran görüntülerinin yenilenmesi.
+
 ## DEVAM (27 Eylül 2026) — Release v1.0.5 açıldı
 
 1.0.4.7 + 1.0.5 `main`'e birleşti (075a9be). Ev masaüstünde elle denendi

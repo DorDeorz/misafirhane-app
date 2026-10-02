@@ -688,6 +688,63 @@ değiştiriliyor, sezonluk fiyat yok).
   baseline'ı 1.0.4.5); başka sürüm kuruluysa "Tamir Et". Release v1.0.5
   açıldı (bkz. madde 5).
 
+### 1.0.6 (dal `claude/project-thread-sz12dl`, bulut oturumunda Claude Code ile
+yapıldı, PR ile gönderildi — **Release YOK**)
+
+Kullanıcının "Konaklayan listesi" fikri (ayrı program yerine uygulamanın
+içine — kullanıcı onayladı). Kararlar: ayrı "kara liste" YOK, mevcut
+"sorunlu misafir" işareti adıyla kalır, rezervasyonu ENGELLEMEZ, yalnızca
+nedeniyle uyarır; puan ve sorunlu bilgisi Excel/çıktıya yalnızca kutucuk
+işaretlenince girer (varsayılan kapalı, KVKK); notu yazan = giriş yapan
+kullanıcı (`loglama.AKTIF_KULLANICI`).
+
+- **Şema (otomatik migrasyon):** `rezervasyonlar.geldigi_yer`;
+  `misafir_kartlari.puan` (0 = yok, 1-5), `sorunlu_nedeni`,
+  `sorunlu_isaretleyen`, `sorunlu_zamani`; yeni `notlar` tablosu
+  (`tur` = rezervasyon / misafir / referans, `anahtar` = rez id / kart id /
+  `repository.metin_anahtari(referans)`, `metin`, `yazan`, `zaman`). Eski
+  `rezervasyonlar.notlar` ve `misafir_kartlari.notu` bir kez (`ayarlar.
+  notlar_tasindi`) not geçmişine taşınır; sorunlu kartın notu sorunlu nedeni
+  olur. Eski kolonlar silinmedi, artık okunmuyor (eski sürüme dönülürse
+  kaybolmasın). `rezervasyon_olustur(notlar=...)` notu alanın adıyla
+  `notlar`'a da yazar.
+- **API:** `misafir_karti_kaydet(telefon, tc, ad, puan, sorunlu,
+  sorunlu_nedeni)` (imza değişti; kart puan yok + sorunsuz + notsuz kalınca
+  silinir), `misafir_karti_olustur`, `not_ekle/not_sil/notlar_listele/
+  not_sayilari/notlar_metni`, `misafir_listesi(arama)` (telefon+TC
+  birleşim-bul ile kişi gruplama), `konaklama_ozetleri`, `referans_listesi`,
+  `referans_rezervasyonlari`, `konaklayan_listesi(bas, bit)` (check-in'li,
+  kişi başı; oda değiştiren tek satır "2 → 5"), `gecmis_geldigi_yerler`.
+- **Arayüz:** `misafir_pencere.py` — 👥 Misafirler sekmesi (Misafirler /
+  Konaklayan Listesi / Referanslar alt sekmeleri), `MisafirDetayDialog`,
+  `MisafirKartiKutusu` (detayda da kullanılır), `ReferansDialog`, yazdırma
+  (`QPrintPreviewDialog`, QtPrintSupport). `notlar_widget.NotlarWidget`
+  (Ekle'ye basınca hemen kaydeder). Rezervasyon detayında "Notlar" alanı
+  yerine "Geldiği yer" + üç sekmeli Notlar kutusu; misafir kartı kutusunda
+  puan + sorunlu nedeni. `export.konaklayan_listesi_disa_aktar` (A4 yatay,
+  başlık sabit, filtre); rezervasyon Excel'indeki "Notlar" artık not
+  geçmişinden.
+- **Sol kenar çubuğu** (kullanıcının ikinci isteği, Zen/Arc tarayıcı gibi):
+  `kenar_cubugu.KenarCubugu`; sekme çubuğu gizli (`self.tabs` QTabWidget
+  olarak kaldı, sayfaları taşır), üst çubuktaki Takvim/Excel/KBS/Kasa/Özet
+  düğmeleri kenarın "ARAÇLAR" bölümüne taşındı. ☰ ya da Ctrl+B ile
+  daraltılır (yalnız simge, ad ipucunda); durum `ayarlar.kenar_cubugu_dar`.
+  QSS `tema.py`'de iki temada da (`#kenar_cubugu`, `#kenar_btn`).
+  Dar halde dikey kaydırma çubuğu gizlenir (kullanıcı isteği).
+- **Donma düzeltmesi (Windows denemesinde bulundu):** Misafirler alt
+  sekmesine geri dönünce ~40 sn donuyordu; görünür `QTableWidget`'ta
+  `ResizeToContents` kolonları her `setItem`'da yeniden ölçüyordu.
+  `misafir_pencere._toplu_doldur(t)` doldurma süresince kolonları
+  `Interactive` yapıp sonunda tek seferde ölçüyor (43 sn → 0,06 sn).
+  Yeni bir çok satırlı tablo doldururken bu yardımcıyı kullan.
+- **Test:** yeni `konaklayan_listesi_test.py` (iş katmanı + offscreen
+  arayüz + kenar çubuğu); `yeni_ozellik_test.py` yeni kart API'sine
+  uyarlandı; `hata_duzeltme_test.py`, `kbs_test.py`,
+  `oda_degistir_kbs_test.py` geçti. `test_verisi_105.py` geldiği yer, puan,
+  sorunlu nedeni ve not örnekleri üretiyor. Kullanıcı 2 Ekim 2026'da ev
+  masaüstünde test verisiyle elle denedi (1c8889a), sorunsuz; README ekran görüntüleri (`docs/ekran/`) hâlâ eski üst sekmeli
+  düzeni gösteriyor.
+
 ---
 
 ## 5. GitHub yapısı ve kuralları
@@ -717,6 +774,8 @@ değiştiriliyor, sezonluk fiyat yok).
     yeni yükseltildi, kullanıcı laptopta test edecek; release'i kullanıcı
     istemeden oluşturma.
   - **1.0.4.7 için ayrı release YOK** — düzeltmeleri v1.0.5 release'inin içinde.
+  - **1.0.6 için release YOK** (henüz) — kullanıcı Windows'ta denemeden ve
+    açıkça istemeden release açma.
   - **1.0.4.4 için GitHub Release VAR** (bkz. yukarı). Önceki bir not burada
     "release yok" diyordu, bu 21 Eylül 2026'da `gh release list` ile
     doğrulanıp düzeltildi — ayrıntı için madde 4'teki "1.0.4.4" bölümünün
@@ -786,7 +845,9 @@ değiştiriliyor, sezonluk fiyat yok).
 
 ## 8. Mevcut durum + bilinen eksikler / öneriler
 
-- En yeni sürüm: **1.0.5** (kasa/borç, misafir kartı, hesap dökümü, günün
+- Kodda en yeni sürüm: **1.0.6** (Misafirler sekmesi / Konaklayan Listesi /
+  not geçmişi / sol kenar çubuğu — PR ile, release yok). Yayındaki en yeni:
+  **1.0.5** (kasa/borç, misafir kartı, hesap dökümü, günün
   özeti, istatistik, çıkışta çift tıkla tahsil) — 1.0.4.7 ve 1.0.5 `main`'e
   birleşti (075a9be); **GitHub Release v1.0.5 VAR** (`Latest`, 3 asset).
   Güncelleme exe'si yalnızca 1.0.4.5'ten günceller.

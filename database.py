@@ -211,6 +211,32 @@ def init_db():
             )
         """)
 
+        # 1.0.6: misafir puanı (0 = puan yok, 1-5) ve "sorunlu misafir"
+        # işaretinin nedeni / işaretleyen / zamanı. Not artık misafir_kartlari.notu
+        # yerine notlar tablosunda (yazanı ve zamanıyla) tutulur.
+        _kart_kolonlari = [r[1] for r in cur.execute("PRAGMA table_info(misafir_kartlari)").fetchall()]
+        for _kolon, _tip in (("puan", "INTEGER DEFAULT 0"), ("sorunlu_nedeni", "TEXT DEFAULT ''"),
+                             ("sorunlu_isaretleyen", "TEXT"), ("sorunlu_zamani", "TEXT")):
+            if _kolon not in _kart_kolonlari:
+                cur.execute("ALTER TABLE misafir_kartlari ADD COLUMN %s %s" % (_kolon, _tip))
+
+        # 1.0.6: not geçmişi. Her not ayrı satır, yazanı ve zamanıyla.
+        #   tur='rezervasyon' -> anahtar = rezervasyon id
+        #   tur='misafir'     -> anahtar = misafir_kartlari id
+        #   tur='referans'    -> anahtar = referans adının sadeleştirilmiş hali
+        #                        (repository.metin_anahtari)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS notlar (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                tur TEXT NOT NULL,
+                anahtar TEXT NOT NULL,
+                metin TEXT NOT NULL,
+                yazan TEXT,
+                zaman TEXT
+            )
+        """)
+        cur.execute("CREATE INDEX IF NOT EXISTS ix_notlar ON notlar (tur, anahtar)")
+
         # Resepsiyon calisanlari - hangi rezervasyonu kimin aldigini takip etmek icin
         cur.execute("""
             CREATE TABLE IF NOT EXISTS kullanicilar (
@@ -257,12 +283,41 @@ def init_db():
         # iptal elle geri alındı (bir daha otomatik iptal edilmez).
         if _rez_kolonlari and "iptal_nedeni" not in _rez_kolonlari:
             cur.execute("ALTER TABLE rezervasyonlar ADD COLUMN iptal_nedeni TEXT")
+        # 1.0.6: misafirin geldiği yer (il / ülke), misafir listesinde ve
+        # konaklayan listesinde gösterilir.
+        if _rez_kolonlari and "geldigi_yer" not in _rez_kolonlari:
+            cur.execute("ALTER TABLE rezervasyonlar ADD COLUMN geldigi_yer TEXT DEFAULT ''")
         if _rez_kolonlari and "oda_id" in _rez_kolonlari:
             raise RuntimeError(
                 "Bu veritabani eski (tek odali) modele ait. Yeni model "
                 "misafirhane.db olusturulmadan once mevcut dosya silinmelidir. "
                 "Yedeginiz korunur; geri yuklemek isterseniz yedek dosyasini acmayin."
             )
+
+        # 1.0.6: eski tek-metin notlar bir kez not geçmişine taşınır
+        # (rezervasyonlar.notlar -> rezervasyon notu, misafir_kartlari.notu ->
+        # misafir notu; sorunlu kartın notu aynı zamanda sorunlu nedeni olur).
+        # Eski kolonlar ve içerikleri olduğu gibi kalır (eski sürüme dönülürse
+        # notlar kaybolmasın) ama 1.0.6'dan itibaren okunmaz.
+        if cur.execute("SELECT 1 FROM ayarlar WHERE anahtar='notlar_tasindi'").fetchone() is None:
+            cur.execute("""
+                INSERT INTO notlar (tur, anahtar, metin, yazan, zaman)
+                SELECT 'rezervasyon', CAST(id AS TEXT), TRIM(notlar), olusturan_kullanici,
+                       datetime(olusturma_tarihi, 'localtime')
+                FROM rezervasyonlar WHERE TRIM(COALESCE(notlar, '')) != ''
+            """)
+            cur.execute("""
+                INSERT INTO notlar (tur, anahtar, metin, yazan, zaman)
+                SELECT 'misafir', CAST(id AS TEXT), TRIM(notu), guncelleyen, guncelleme_zamani
+                FROM misafir_kartlari WHERE TRIM(COALESCE(notu, '')) != ''
+            """)
+            cur.execute("""
+                UPDATE misafir_kartlari
+                SET sorunlu_nedeni = TRIM(notu), sorunlu_isaretleyen = guncelleyen,
+                    sorunlu_zamani = guncelleme_zamani
+                WHERE sorunlu = 1 AND TRIM(COALESCE(sorunlu_nedeni, '')) = ''
+            """)
+            cur.execute("INSERT INTO ayarlar (anahtar, deger) VALUES ('notlar_tasindi', '1')")
 
         conn.commit()
     except Exception:

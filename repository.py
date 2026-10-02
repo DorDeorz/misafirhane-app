@@ -324,7 +324,7 @@ def musaitlik_kontrol(oda_id, giris_tarihi, gece_sayisi, haric_rez_id=None, hari
 # ---------------- REZERVASYON (UST TABLO) ----------------
 
 def rezervasyon_olustur(odalar, ad_soyad, tc_no="", telefon="", referans="", notlar="",
-                        olusturan_kullanici=None, gecmis_kontrol=True):
+                        olusturan_kullanici=None, gecmis_kontrol=True, geldigi_yer=""):
     """ÇOK ODALI rezervasyon oluşturur.
 
     odalar: her biri bir oda satirini temsil eden dict (veya dict destekli) listesi:
@@ -356,10 +356,17 @@ def rezervasyon_olustur(odalar, ad_soyad, tc_no="", telefon="", referans="", not
 
         # 1) Ust tablo
         cur.execute("""
-            INSERT INTO rezervasyonlar (ad_soyad, tc_no, telefon, referans, notlar, olusturan_kullanici)
-            VALUES (?,?,?,?,?,?)
-        """, (ad_soyad, tc_no, telefon, referans, notlar, olusturan_kullanici))
+            INSERT INTO rezervasyonlar (ad_soyad, tc_no, telefon, referans, notlar, olusturan_kullanici,
+                                        geldigi_yer)
+            VALUES (?,?,?,?,?,?,?)
+        """, (ad_soyad, tc_no, telefon, referans, notlar, olusturan_kullanici,
+              (geldigi_yer or "").strip()))
         rez_id = cur.lastrowid
+        # 1.0.6: rezervasyon alınırken yazılan not, not geçmişine ilk not olarak
+        # (rezervasyonu alan kullanıcı adıyla) girer.
+        if (notlar or "").strip():
+            _not_ekle_cur(cur, "rezervasyon", rez_id, notlar,
+                          olusturan_kullanici or loglama.AKTIF_KULLANICI)
 
         # 2) Her oda satiri + odemeler
         for r in odalar:
@@ -434,19 +441,25 @@ def rezervasyon_getir(rez_id):
         conn.close()
 
 
-def rezervasyon_guncelle(rez_id, ad_soyad, tc_no, telefon, referans, notlar):
-    """Üst tablodaki iletişim bilgilerini günceller (oda satirlari etkilenmez)."""
+def rezervasyon_guncelle(rez_id, ad_soyad, tc_no, telefon, referans, notlar=None, geldigi_yer=None):
+    """Üst tablodaki iletişim bilgilerini günceller (oda satirlari etkilenmez).
+    notlar / geldigi_yer None verilirse mevcut değer korunur (1.0.6'dan beri
+    notlar not geçmişinde tutulur, bkz. not_ekle)."""
     conn = get_connection()
     try:
         cur = conn.cursor()
-        row = cur.execute("SELECT id FROM rezervasyonlar WHERE id=?", (rez_id,)).fetchone()
+        row = cur.execute("SELECT id, notlar, geldigi_yer FROM rezervasyonlar WHERE id=?", (rez_id,)).fetchone()
         if not row:
             raise ValueError("Rezervasyon bulunamadı.")
+        if notlar is None:
+            notlar = row["notlar"]
+        if geldigi_yer is None:
+            geldigi_yer = row["geldigi_yer"]
         cur.execute("""
             UPDATE rezervasyonlar
-            SET ad_soyad=?, tc_no=?, telefon=?, referans=?, notlar=?
+            SET ad_soyad=?, tc_no=?, telefon=?, referans=?, notlar=?, geldigi_yer=?
             WHERE id=?
-        """, (ad_soyad, tc_no, telefon, referans, notlar, rez_id))
+        """, (ad_soyad, tc_no, telefon, referans, notlar, (geldigi_yer or "").strip(), rez_id))
         conn.commit()
         loglama.islem_yaz("rezervasyon_guncelle", f"Rezervasyon #{rez_id} bilgileri güncellendi: {ad_soyad}.")
     except Exception:
@@ -2124,47 +2137,549 @@ def misafir_karti_getir(telefon=None, tc_no=None):
         conn.close()
 
 
-def misafir_karti_kaydet(telefon, tc_no, ad_soyad, notu, sorunlu):
-    """Misafir kartını oluşturur ya da günceller. Not boş ve sorunlu
-    işaretsizse mevcut kart silinir (gereksiz boş kart birikmesin).
-    Telefon da TC de yoksa kaydedilemez (ValueError)."""
+def _kart_bul_cur(cur, anahtar, tc):
+    if tc:
+        row = cur.execute(
+            "SELECT * FROM misafir_kartlari WHERE tc_no = ? ORDER BY id DESC LIMIT 1", (tc,)
+        ).fetchone()
+        if row:
+            return row
+    if anahtar:
+        return cur.execute(
+            "SELECT * FROM misafir_kartlari WHERE telefon_anahtar = ? ORDER BY id DESC LIMIT 1",
+            (anahtar,),
+        ).fetchone()
+    return None
+
+
+def misafir_karti_olustur(telefon, tc_no, ad_soyad):
+    """Misafirin kartını döndürür; yoksa boş bir kart açar (misafir notu
+    eklemek için kart gerekir). Telefon da TC de yoksa ValueError."""
     anahtar = telefon_anahtari(telefon)
     tc = (tc_no or "").strip()
     if not anahtar and not tc:
-        raise ValueError("Misafir notu için telefon ya da TC/belge no gerekli.")
-    notu = (notu or "").strip()
-    mevcut = misafir_karti_getir(telefon, tc)
+        raise ValueError("Misafir kartı için telefon ya da TC/belge no gerekli.")
     conn = get_connection()
     try:
         cur = conn.cursor()
-        zaman = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        if not notu and not sorunlu:
+        row = _kart_bul_cur(cur, anahtar, tc)
+        if row is None:
+            cur.execute("""
+                INSERT INTO misafir_kartlari (telefon_anahtar, tc_no, ad_soyad, guncelleyen, guncelleme_zamani)
+                VALUES (?,?,?,?,?)
+            """, (anahtar, tc, ad_soyad or "", loglama.AKTIF_KULLANICI, _simdi()))
+            row = cur.execute("SELECT * FROM misafir_kartlari WHERE id=?", (cur.lastrowid,)).fetchone()
+            conn.commit()
+        return dict(row)
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def misafir_karti_kaydet(telefon, tc_no, ad_soyad, puan=0, sorunlu=False, sorunlu_nedeni=""):
+    """Misafir kartının puanını (0 = puan yok, 1-5) ve 'sorunlu misafir'
+    işaretini (nedeniyle) kaydeder. Sorunlu işaretlenirken ya da nedeni
+    değiştirilirken işaretleyen kullanıcı ve zaman da yazılır.
+    Puan yok, sorunlu değil ve misafir notu da yoksa kart silinir (gereksiz
+    boş kart birikmesin). Telefon da TC de yoksa kaydedilemez (ValueError)."""
+    anahtar = telefon_anahtari(telefon)
+    tc = (tc_no or "").strip()
+    if not anahtar and not tc:
+        raise ValueError("Misafir kartı için telefon ya da TC/belge no gerekli.")
+    puan = int(puan or 0)
+    if not 0 <= puan <= 5:
+        raise ValueError("Puan 1 ile 5 arasında olmalıdır.")
+    sorunlu = bool(sorunlu)
+    neden = (sorunlu_nedeni or "").strip() if sorunlu else ""
+    conn = get_connection()
+    degisiklik = None
+    try:
+        cur = conn.cursor()
+        mevcut = _kart_bul_cur(cur, anahtar, tc)
+        mevcut = dict(mevcut) if mevcut else None
+        zaman = _simdi()
+        kullanici = loglama.AKTIF_KULLANICI
+        not_var = bool(mevcut) and cur.execute(
+            "SELECT 1 FROM notlar WHERE tur='misafir' AND anahtar=? LIMIT 1", (str(mevcut["id"]),)
+        ).fetchone() is not None
+        if not puan and not sorunlu and not not_var:
             if mevcut:
                 cur.execute("DELETE FROM misafir_kartlari WHERE id=?", (mevcut["id"],))
-        elif mevcut:
-            cur.execute("""
-                UPDATE misafir_kartlari
-                SET telefon_anahtar=?, tc_no=?, ad_soyad=?, notu=?, sorunlu=?,
-                    guncelleyen=?, guncelleme_zamani=?
-                WHERE id=?
-            """, (anahtar or mevcut["telefon_anahtar"], tc or mevcut["tc_no"], ad_soyad or "",
-                  notu, 1 if sorunlu else 0, loglama.AKTIF_KULLANICI, zaman, mevcut["id"]))
         else:
-            cur.execute("""
-                INSERT INTO misafir_kartlari
-                    (telefon_anahtar, tc_no, ad_soyad, notu, sorunlu, guncelleyen, guncelleme_zamani)
-                VALUES (?,?,?,?,?,?,?)
-            """, (anahtar, tc, ad_soyad or "", notu, 1 if sorunlu else 0,
-                  loglama.AKTIF_KULLANICI, zaman))
+            eski = mevcut or {}
+            if sorunlu and (not eski.get("sorunlu") or neden != (eski.get("sorunlu_nedeni") or "")):
+                isaretleyen, isaret_zamani = kullanici, zaman
+            elif sorunlu:
+                isaretleyen, isaret_zamani = eski.get("sorunlu_isaretleyen"), eski.get("sorunlu_zamani")
+            else:
+                isaretleyen, isaret_zamani = None, None
+            if mevcut:
+                cur.execute("""
+                    UPDATE misafir_kartlari
+                    SET telefon_anahtar=?, tc_no=?, ad_soyad=?, puan=?, sorunlu=?, sorunlu_nedeni=?,
+                        sorunlu_isaretleyen=?, sorunlu_zamani=?, guncelleyen=?, guncelleme_zamani=?
+                    WHERE id=?
+                """, (anahtar or mevcut["telefon_anahtar"], tc or mevcut["tc_no"],
+                      ad_soyad or mevcut["ad_soyad"] or "", puan, 1 if sorunlu else 0, neden,
+                      isaretleyen, isaret_zamani, kullanici, zaman, mevcut["id"]))
+            else:
+                cur.execute("""
+                    INSERT INTO misafir_kartlari
+                        (telefon_anahtar, tc_no, ad_soyad, puan, sorunlu, sorunlu_nedeni,
+                         sorunlu_isaretleyen, sorunlu_zamani, guncelleyen, guncelleme_zamani)
+                    VALUES (?,?,?,?,?,?,?,?,?,?)
+                """, (anahtar, tc, ad_soyad or "", puan, 1 if sorunlu else 0, neden,
+                      isaretleyen, isaret_zamani, kullanici, zaman))
+        conn.commit()
+        eski = mevcut or {}
+        parcalar = []
+        if int(eski.get("puan") or 0) != puan:
+            parcalar.append(f"puan {puan}/5" if puan else "puan kaldırıldı")
+        if bool(eski.get("sorunlu")) != sorunlu or (sorunlu and neden != (eski.get("sorunlu_nedeni") or "")):
+            parcalar.append(f"sorunlu olarak işaretlendi: {neden or '(neden yazılmadı)'}" if sorunlu
+                            else "sorunlu işareti kaldırıldı")
+        if parcalar:
+            degisiklik = f"{ad_soyad or eski.get('ad_soyad') or '-'} misafir kartı: " + "; ".join(parcalar)
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+    if degisiklik:
+        loglama.islem_yaz("misafir_karti", degisiklik)
+
+
+# ---------------- NOTLAR (1.0.6) ----------------
+
+NOT_TURLERI = ("rezervasyon", "misafir", "referans")
+
+
+def _simdi():
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
+def metin_anahtari(metin):
+    """Ad / referans karşılaştırması için sadeleştirir: Türkçe büyük-küçük harf
+    ve fazla boşluk farkı yok ('Başkan  Ahmet Bey' == 'başkan ahmet bey')."""
+    return _kimlik_adi(metin)
+
+
+def _not_anahtari(tur, anahtar):
+    if tur not in NOT_TURLERI:
+        raise ValueError(f"Bilinmeyen not türü: {tur}")
+    if tur == "referans":
+        anahtar = metin_anahtari(anahtar)
+    anahtar = str(anahtar or "").strip()
+    if not anahtar:
+        raise ValueError("Not eklenecek kayıt belirtilmedi.")
+    return anahtar
+
+
+def _not_ekle_cur(cur, tur, anahtar, metin, yazan):
+    cur.execute(
+        "INSERT INTO notlar (tur, anahtar, metin, yazan, zaman) VALUES (?,?,?,?,?)",
+        (tur, _not_anahtari(tur, anahtar), metin.strip(), yazan, _simdi()),
+    )
+    return cur.lastrowid
+
+
+def not_ekle(tur, anahtar, metin):
+    """Not geçmişine yeni not ekler; yazan, giriş yapmış kullanıcıdır.
+    tur: 'rezervasyon' (anahtar = rezervasyon id), 'misafir' (anahtar =
+    misafir kartı id, bkz. misafir_karti_olustur) ya da 'referans' (anahtar =
+    referans adı). Döner: not id."""
+    metin = (metin or "").strip()
+    if not metin:
+        raise ValueError("Not boş olamaz.")
+    conn = get_connection()
+    try:
+        not_id = _not_ekle_cur(conn.cursor(), tur, anahtar, metin, loglama.AKTIF_KULLANICI)
         conn.commit()
     except Exception:
         conn.rollback()
         raise
     finally:
         conn.close()
-    if (mevcut or {}).get("notu", "") != notu or bool((mevcut or {}).get("sorunlu")) != bool(sorunlu):
-        durum = " (sorunlu misafir)" if sorunlu else ""
-        loglama.islem_yaz("misafir_notu", f"{ad_soyad or '-'} misafir notu güncellendi{durum}: {notu or '(silindi)'}")
+    loglama.islem_yaz("not_ekle", f"{tur.capitalize()} notu ({anahtar}): {metin}")
+    return not_id
+
+
+def not_sil(not_id):
+    """Bir notu siler (yanlış yazılan not için); silinen not işlem geçmişine yazılır."""
+    conn = get_connection()
+    try:
+        row = conn.execute("SELECT * FROM notlar WHERE id=?", (not_id,)).fetchone()
+        if row is None:
+            raise ValueError("Not bulunamadı.")
+        conn.execute("DELETE FROM notlar WHERE id=?", (not_id,))
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+    loglama.islem_yaz("not_sil", f"{row['tur'].capitalize()} notu silindi "
+                                 f"(yazan {row['yazan'] or '-'}, {row['zaman'] or '-'}): {row['metin']}")
+
+
+def notlar_listele(tur, anahtar):
+    """Bir kaydın notları, en yeniden eskiye (id, metin, yazan, zaman)."""
+    try:
+        anahtar = _not_anahtari(tur, anahtar)
+    except ValueError:
+        return []
+    conn = get_connection()
+    try:
+        rows = conn.execute(
+            "SELECT * FROM notlar WHERE tur=? AND anahtar=? ORDER BY zaman DESC, id DESC",
+            (tur, anahtar),
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def not_sayilari(tur):
+    """{anahtar: not adedi} — listelerde 'not var' göstergesi için."""
+    conn = get_connection()
+    try:
+        return {r["anahtar"]: r["c"] for r in conn.execute(
+            "SELECT anahtar, COUNT(*) c FROM notlar WHERE tur=? GROUP BY anahtar", (tur,))}
+    finally:
+        conn.close()
+
+
+def notlar_metni(tur):
+    """{anahtar: 'not1 | not2'} (eskiden yeniye) — Excel gibi tek hücrelik
+    gösterimler için."""
+    conn = get_connection()
+    try:
+        sonuc = {}
+        for r in conn.execute("SELECT anahtar, metin FROM notlar WHERE tur=? ORDER BY zaman, id", (tur,)):
+            sonuc[r["anahtar"]] = (sonuc[r["anahtar"]] + " | " if r["anahtar"] in sonuc else "") + r["metin"]
+        return sonuc
+    finally:
+        conn.close()
+
+
+# ---------------- MİSAFİR LİSTESİ / REFERANSLAR / KONAKLAYAN LİSTESİ (1.0.6) ----------------
+
+_ETKIN_CIKIS = ("COALESCE(NULLIF(ro.cikis_tarihi, ''), "
+                "date(ro.giris_tarihi, '+' || ro.gece_sayisi || ' day'))")
+
+
+def _konaklanan_rezervasyonlar(cur, rez_idler=None):
+    """İptal edilmemiş ve en az bir odası check-in yapılmış rezervasyonların
+    özetleri (gece = ilk girişten son çıkışa kadar, çok odalıda tekrar sayılmaz)."""
+    filtre, parametre = "", []
+    if rez_idler is not None:
+        if not rez_idler:
+            return []
+        filtre = f" AND r.id IN ({','.join('?' * len(rez_idler))})"
+        parametre = list(rez_idler)
+    rows = cur.execute(f"""
+        SELECT r.id as rez_id, r.ad_soyad, r.telefon, r.tc_no, r.referans,
+               COALESCE(r.geldigi_yer, '') as geldigi_yer, r.olusturan_kullanici,
+               MIN(ro.giris_tarihi) as giris, MAX({_ETKIN_CIKIS}) as cikis,
+               CAST(julianday(MAX({_ETKIN_CIKIS})) - julianday(MIN(ro.giris_tarihi)) AS INTEGER) as gece,
+               GROUP_CONCAT(DISTINCT o.oda_no) as odalar,
+               SUM(CASE WHEN ro.checkin_yapildi=1 AND (ro.cikis_tarihi IS NULL OR ro.cikis_tarihi='')
+                        THEN 1 ELSE 0 END) as iceride
+        FROM rezervasyonlar r
+        JOIN rezervasyon_odalar ro ON ro.rezervasyon_id = r.id
+        JOIN odalar o ON o.id = ro.oda_id
+        WHERE r.iptal = 0{filtre}
+        GROUP BY r.id
+        HAVING SUM(ro.checkin_yapildi) > 0
+        ORDER BY giris DESC, r.id DESC
+    """, parametre).fetchall()
+    return [dict(r) for r in rows]
+
+
+def misafir_listesi(arama=""):
+    """Konaklamış misafirler, kişi başı tek satır; son konaklamaya göre yeniden
+    eskiye. Aynı kişi = aynı telefon (son 10 hane) ya da aynı TC/belge no;
+    ikisi de yoksa aynı ad soyad. arama: ad soyad, telefon ya da geldiği yer
+    içinde geçen metin (Türkçe harf duyarsız).
+
+    Her satır: anahtar, ad_soyad, telefon, tc_no, geldigi_yer, konaklama,
+    toplam_gece, ilk_giris, son_giris, son_cikis, iceride, rez_idler, kart_id,
+    puan, sorunlu, sorunlu_nedeni, not_sayisi."""
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        rezler = _konaklanan_rezervasyonlar(cur)
+        kartlar = [dict(r) for r in cur.execute("SELECT * FROM misafir_kartlari")]
+    finally:
+        conn.close()
+    not_sayisi = not_sayilari("misafir")
+
+    # Birleşim-bul: telefon ve TC anahtarları aynı kişiyi bağlar.
+    ebeveyn = {}
+
+    def bul(x):
+        while ebeveyn.setdefault(x, x) != x:
+            ebeveyn[x] = ebeveyn[ebeveyn[x]]
+            x = ebeveyn[x]
+        return x
+
+    def birlestir(a, b):
+        ebeveyn[bul(a)] = bul(b)
+
+    for r in rezler:
+        anahtarlar = []
+        tel = telefon_anahtari(r["telefon"])
+        if tel:
+            anahtarlar.append("tel:" + tel)
+        if (r["tc_no"] or "").strip():
+            anahtarlar.append("tc:" + r["tc_no"].strip())
+        if not anahtarlar:
+            anahtarlar.append("ad:" + metin_anahtari(r["ad_soyad"]))
+        r["_anahtarlar"] = anahtarlar
+        for a in anahtarlar[1:]:
+            birlestir(anahtarlar[0], a)
+        bul(anahtarlar[0])
+
+    kart_tc = {k["tc_no"]: k for k in kartlar if k["tc_no"]}
+    kart_tel = {k["telefon_anahtar"]: k for k in kartlar if k["telefon_anahtar"]}
+
+    gruplar = {}
+    for r in rezler:  # en yeni konaklama önce gelir
+        kok = bul(r["_anahtarlar"][0])
+        g = gruplar.get(kok)
+        if g is None:
+            g = gruplar[kok] = {
+                "anahtar": kok, "ad_soyad": " ".join((r["ad_soyad"] or "").split()),
+                "telefon": r["telefon"] or "",
+                "tc_no": r["tc_no"] or "", "geldigi_yer": r["geldigi_yer"],
+                "konaklama": 0, "toplam_gece": 0, "ilk_giris": r["giris"],
+                "son_giris": r["giris"], "son_cikis": r["cikis"], "iceride": False,
+                "rez_idler": [], "_anahtarlar": set(),
+            }
+        g["konaklama"] += 1
+        g["toplam_gece"] += max(r["gece"] or 0, 0)
+        g["ilk_giris"] = min(g["ilk_giris"], r["giris"])
+        g["iceride"] = g["iceride"] or bool(r["iceride"])
+        g["rez_idler"].append(r["rez_id"])
+        g["_anahtarlar"].update(r["_anahtarlar"])
+        for alan in ("telefon", "tc_no", "geldigi_yer"):
+            if not g[alan] and r[alan]:
+                g[alan] = r[alan]
+
+    sonuc = []
+    aranan = metin_anahtari(arama)
+    aranan_rakam = "".join(c for c in (arama or "") if c.isdigit())
+    for g in gruplar.values():
+        kart = None
+        for a in sorted(g["_anahtarlar"]):  # 'tc:' anahtarları 'tel:'den önce gelir
+            if a.startswith("tc:") and a[3:] in kart_tc:
+                kart = kart_tc[a[3:]]
+                break
+        if kart is None:
+            for a in g["_anahtarlar"]:
+                if a.startswith("tel:") and a[4:] in kart_tel:
+                    kart = kart_tel[a[4:]]
+                    break
+        del g["_anahtarlar"]
+        g["kart_id"] = kart["id"] if kart else None
+        g["puan"] = int((kart or {}).get("puan") or 0)
+        g["sorunlu"] = bool((kart or {}).get("sorunlu"))
+        g["sorunlu_nedeni"] = (kart or {}).get("sorunlu_nedeni") or ""
+        g["not_sayisi"] = not_sayisi.get(str(kart["id"]), 0) if kart else 0
+        if aranan or aranan_rakam:
+            metin = metin_anahtari(f"{g['ad_soyad']} {g['geldigi_yer']}")
+            rakam = "".join(c for c in g["telefon"] + " " + g["tc_no"] if c.isdigit())
+            if not ((aranan and aranan in metin) or (len(aranan_rakam) >= 3 and aranan_rakam in rakam)):
+                continue
+        sonuc.append(g)
+    sonuc.sort(key=lambda x: (x["son_giris"] or "", x["rez_idler"][0]), reverse=True)
+    return sonuc
+
+
+def konaklama_ozetleri(rez_idler):
+    """Verilen rezervasyonların konaklama özetleri (misafir/referans detayında
+    liste olarak gösterilir), en yeniden eskiye."""
+    conn = get_connection()
+    try:
+        return _konaklanan_rezervasyonlar(conn.cursor(), list(rez_idler))
+    finally:
+        conn.close()
+
+
+def gecmis_geldigi_yerler():
+    """Daha önce yazılmış 'geldiği yer' değerleri (otomatik tamamlama için)."""
+    conn = get_connection()
+    try:
+        return [r[0] for r in conn.execute(
+            "SELECT DISTINCT TRIM(geldigi_yer) FROM rezervasyonlar "
+            "WHERE TRIM(COALESCE(geldigi_yer, '')) != '' ORDER BY 1")]
+    finally:
+        conn.close()
+
+
+def referans_listesi(arama=""):
+    """Referanslar (aynı ad, harf/boşluk farkı gözetmeksizin tek satır):
+    anahtar, referans (son yazılış), rezervasyon, konaklayan, son_giris,
+    not_sayisi, rez_idler. Son kullanılan en üstte."""
+    conn = get_connection()
+    try:
+        rows = conn.execute(f"""
+            SELECT r.id, r.referans, r.iptal, MIN(ro.giris_tarihi) as giris,
+                   SUM(ro.checkin_yapildi) as checkin
+            FROM rezervasyonlar r
+            JOIN rezervasyon_odalar ro ON ro.rezervasyon_id = r.id
+            WHERE TRIM(COALESCE(r.referans, '')) != ''
+            GROUP BY r.id
+            ORDER BY giris DESC, r.id DESC
+        """).fetchall()
+    finally:
+        conn.close()
+    not_sayisi = not_sayilari("referans")
+    aranan = metin_anahtari(arama)
+    gruplar = {}
+    for r in rows:
+        anahtar = metin_anahtari(r["referans"])
+        g = gruplar.setdefault(anahtar, {
+            "anahtar": anahtar, "referans": r["referans"].strip(), "rezervasyon": 0,
+            "konaklayan": 0, "son_giris": r["giris"], "rez_idler": [],
+        })
+        if r["iptal"]:
+            continue
+        g["rezervasyon"] += 1
+        if r["checkin"]:
+            g["konaklayan"] += 1
+        g["rez_idler"].append(r["id"])
+    sonuc = []
+    for g in gruplar.values():
+        if not g["rez_idler"]:
+            continue
+        if aranan and aranan not in g["anahtar"]:
+            continue
+        g["not_sayisi"] = not_sayisi.get(g["anahtar"], 0)
+        sonuc.append(g)
+    return sonuc
+
+
+def referans_rezervasyonlari(referans):
+    """Bir referansla alınmış (iptal edilmemiş) bütün rezervasyonlar —
+    henüz gelmemiş olanlar da dahil — en yeniden eskiye."""
+    anahtar = metin_anahtari(referans)
+    if not anahtar:
+        return []
+    conn = get_connection()
+    try:
+        rows = conn.execute(f"""
+            SELECT r.id as rez_id, r.ad_soyad, r.telefon, r.referans,
+                   COALESCE(r.geldigi_yer, '') as geldigi_yer,
+                   MIN(ro.giris_tarihi) as giris, MAX({_ETKIN_CIKIS}) as cikis,
+                   CAST(julianday(MAX({_ETKIN_CIKIS})) - julianday(MIN(ro.giris_tarihi)) AS INTEGER) as gece,
+                   GROUP_CONCAT(DISTINCT o.oda_no) as odalar,
+                   SUM(ro.checkin_yapildi) as checkin
+            FROM rezervasyonlar r
+            JOIN rezervasyon_odalar ro ON ro.rezervasyon_id = r.id
+            JOIN odalar o ON o.id = ro.oda_id
+            WHERE r.iptal = 0 AND TRIM(COALESCE(r.referans, '')) != ''
+            GROUP BY r.id
+            ORDER BY giris DESC, r.id DESC
+        """).fetchall()
+    finally:
+        conn.close()
+    return [dict(r) for r in rows if metin_anahtari(r["referans"]) == anahtar]
+
+
+def konaklayan_listesi(baslangic_str, bitis_str):
+    """Tarih aralığında (iki uç dahil) fiilen kalmış kişiler, kişi başı tek
+    satır, giriş tarihine göre sıralı. Yalnızca check-in yapılmış, iptal
+    edilmemiş oda satırları sayılır. Oda değiştiren misafir tek satırda
+    görünür (odalar '3 → 5' biçiminde). Check-in'de kişi girilmemiş odalarda
+    rezervasyon sahibi yazılır.
+
+    Her satır: ad_soyad, tc_no, uyruk, telefon, geldigi_yer, odalar, giris,
+    cikis, gece, iceride, referans, alan, rez_id, puan, sorunlu, sorunlu_nedeni."""
+    _tarih_dogrula(baslangic_str)
+    _tarih_dogrula(bitis_str)
+    if bitis_str < baslangic_str:
+        baslangic_str, bitis_str = bitis_str, baslangic_str
+    import kbs
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        tum_ro = {r["id"]: dict(r) for r in cur.execute(f"""
+            SELECT ro.id, ro.onceki_ro_id, ro.rezervasyon_id, ro.giris_tarihi, ro.cikis_tarihi,
+                   {_ETKIN_CIKIS} as etkin_cikis, o.oda_no, o.kat_adi,
+                   r.ad_soyad as rez_ad, r.telefon, r.tc_no as rez_tc, r.referans,
+                   COALESCE(r.geldigi_yer, '') as geldigi_yer, r.olusturan_kullanici
+            FROM rezervasyon_odalar ro
+            JOIN rezervasyonlar r ON r.id = ro.rezervasyon_id
+            JOIN odalar o ON o.id = ro.oda_id
+            WHERE r.iptal = 0 AND ro.checkin_yapildi = 1
+        """)}
+        misafirler = {}
+        for m in cur.execute("SELECT * FROM misafirler ORDER BY rezervasyon_oda_id, sira_no, id"):
+            if m["rezervasyon_oda_id"] in tum_ro:
+                misafirler.setdefault(m["rezervasyon_oda_id"], []).append(dict(m))
+        kartlar = [dict(r) for r in cur.execute("SELECT * FROM misafir_kartlari")]
+    finally:
+        conn.close()
+    kart_tc = {k["tc_no"]: k for k in kartlar if k["tc_no"]}
+    kart_tel = {k["telefon_anahtar"]: k for k in kartlar if k["telefon_anahtar"]}
+
+    def kok(ro_id):
+        gorulen = set()
+        while tum_ro[ro_id]["onceki_ro_id"] in tum_ro and ro_id not in gorulen:
+            gorulen.add(ro_id)
+            ro_id = tum_ro[ro_id]["onceki_ro_id"]
+        return ro_id
+
+    kisiler = {}
+    for ro in sorted(tum_ro.values(), key=lambda x: (x["giris_tarihi"], x["id"])):
+        liste = misafirler.get(ro["id"]) or [{"ad_soyad": ro["rez_ad"], "tc_no": ro["rez_tc"] or ""}]
+        for m in liste:
+            kimlik = (m.get("tc_no") or "").strip() or metin_anahtari(m.get("ad_soyad"))
+            anahtar = (kok(ro["id"]), kimlik)
+            k = kisiler.get(anahtar)
+            oda = str(ro["oda_no"])
+            if k is None:
+                tip = kbs.misafir_tipi(m.get("tc_no"), m) if m.get("id") else "yerli"
+                kisiler[anahtar] = {
+                    "ad_soyad": m.get("ad_soyad") or ro["rez_ad"], "tc_no": m.get("tc_no") or "",
+                    "uyruk": (m.get("uyruk") or "Yabancı") if tip == "yabanci" else "T.C.",
+                    "telefon": ro["telefon"] or "", "geldigi_yer": ro["geldigi_yer"],
+                    "odalar": [oda], "giris": ro["giris_tarihi"], "cikis": ro["etkin_cikis"],
+                    "iceride": not ro["cikis_tarihi"], "referans": ro["referans"] or "",
+                    "alan": ro["olusturan_kullanici"] or "", "rez_id": ro["rezervasyon_id"],
+                    "rez_tc": ro["rez_tc"] or "", "rez_ad": ro["rez_ad"],
+                }
+            else:
+                if k["odalar"][-1] != oda:
+                    k["odalar"].append(oda)
+                k["giris"] = min(k["giris"], ro["giris_tarihi"])
+                k["cikis"] = max(k["cikis"], ro["etkin_cikis"])
+                k["iceride"] = not ro["cikis_tarihi"]
+
+    sonuc = []
+    for k in kisiler.values():
+        # aralıkta en az bir gece kalmış (ya da aralık içinde aynı gün girip çıkmış)
+        if not (k["giris"] <= bitis_str and (k["cikis"] > baslangic_str or k["giris"] >= baslangic_str)):
+            continue
+        k["odalar"] = " → ".join(k["odalar"])
+        k["gece"] = (datetime.strptime(k["cikis"], "%Y-%m-%d")
+                     - datetime.strptime(k["giris"], "%Y-%m-%d")).days
+        # Misafir kartı: kişinin kendi TC'siyle; bulunamazsa ve kişi
+        # rezervasyon sahibiyse rezervasyonun TC'si / telefonuyla.
+        rez_tc, rez_ad = k.pop("rez_tc"), k.pop("rez_ad")
+        kart = kart_tc.get(k["tc_no"]) if k["tc_no"] else None
+        if kart is None and metin_anahtari(k["ad_soyad"]) == metin_anahtari(rez_ad):
+            kart = (kart_tc.get(rez_tc) if rez_tc else None) or \
+                kart_tel.get(telefon_anahtari(k["telefon"]))
+        k["puan"] = int((kart or {}).get("puan") or 0)
+        k["sorunlu"] = bool((kart or {}).get("sorunlu"))
+        k["sorunlu_nedeni"] = (kart or {}).get("sorunlu_nedeni") or ""
+        sonuc.append(k)
+    sonuc.sort(key=lambda x: (x["giris"], x["odalar"], metin_anahtari(x["ad_soyad"])))
+    return sonuc
 
 
 # ---------------- HESAP DÖKÜMÜ (1.0.5) ----------------

@@ -148,6 +148,18 @@ _AYDINLIK_QSS = """
 #ust_bar { background-color: #ffffff; border-bottom: 1px solid #dce1e9; }
 #baslik  { font-size: 16px; font-weight: 700; color: #16233a; }
 
+#kenar_cubugu { background-color: #ffffff; border-right: 1px solid #dce1e9; }
+#kenar_alan, #kenar_icerik { background: transparent; border: none; }
+QPushButton#kenar_btn {
+    text-align: left; border: none; background: transparent; color: #556070;
+    padding: 6px 10px; min-height: 22px; border-radius: 6px;
+}
+QPushButton#kenar_btn:hover { background: rgba(47, 111, 237, 0.08); }
+QPushButton#kenar_btn:checked { background: rgba(47, 111, 237, 0.14); color: #16233a; font-weight: 700; }
+QPushButton#kenar_daralt { border: none; background: transparent; font-size: 17px; padding: 2px 10px; min-height: 26px; }
+QPushButton#kenar_daralt:hover { background: rgba(47, 111, 237, 0.08); }
+#kenar_baslik { color: #8a94a6; font-size: 10px; font-weight: 700; padding: 4px 10px 2px 10px; }
+
 QTabWidget::pane { border: none; background: transparent; }
 QTabBar::tab {
     background: transparent; color: #556070;
@@ -222,6 +234,18 @@ QMessageBox QLabel { min-width: 320px; }
 _KARANLIK_QSS = """
 #ust_bar { background-color: #1f242b; border-bottom: 1px solid #353c46; }
 #baslik  { font-size: 16px; font-weight: 700; color: #ffffff; }
+
+#kenar_cubugu { background-color: #1f242b; border-right: 1px solid #353c46; }
+#kenar_alan, #kenar_icerik { background: transparent; border: none; }
+QPushButton#kenar_btn {
+    text-align: left; border: none; background: transparent; color: #aab4c3;
+    padding: 6px 10px; min-height: 22px; border-radius: 6px;
+}
+QPushButton#kenar_btn:hover { background: rgba(59, 130, 246, 0.12); }
+QPushButton#kenar_btn:checked { background: rgba(59, 130, 246, 0.22); color: #ffffff; font-weight: 700; }
+QPushButton#kenar_daralt { border: none; background: transparent; color: #e8e8e8; font-size: 17px; padding: 2px 10px; min-height: 26px; }
+QPushButton#kenar_daralt:hover { background: rgba(59, 130, 246, 0.12); }
+#kenar_baslik { color: #7d8796; font-size: 10px; font-weight: 700; padding: 4px 10px 2px 10px; }
 
 QTabWidget::pane { border: none; background: transparent; }
 QTabBar::tab {

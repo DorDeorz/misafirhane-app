@@ -8,7 +8,7 @@ Küçük işletmeler ve misafirhaneler için **internetsiz çalışan** masaüst
 
 > Görüntüler örnek (uydurma) test verisiyle alınmıştır; gerçek misafir bilgisi içermez.
 
-| Oda Durumu | Yeni Rezervasyon (tekrar gelen misafir) |
+| Oda Durumu (sol menü) | Yeni Rezervasyon (tekrar gelen misafir) |
 |---|---|
 | ![Oda Durumu](docs/ekran/oda_durumu.png) | ![Yeni Rezervasyon](docs/ekran/tekrar_gelen_misafir.png) |
 | **Rezervasyon detayı ve misafir kartı** | **Çıkış (borç gösterimi, çift tıkla tahsil + çıkış)** |
@@ -17,8 +17,11 @@ Küçük işletmeler ve misafirhaneler için **internetsiz çalışan** masaüst
 | ![Gün sonu kasa](docs/ekran/kasa.png) | ![Açık borçlar](docs/ekran/acik_borclar.png) |
 | **İstatistik** | **Rezervasyon Yönetimi** |
 | ![İstatistik](docs/ekran/istatistik.png) | ![Rezervasyon Yönetimi](docs/ekran/rezervasyon_yonetimi.png) |
+| **Misafirler** | **Konaklayan Listesi** |
+| ![Misafirler](docs/ekran/misafirler.png) | ![Konaklayan Listesi](docs/ekran/konaklayan_listesi.png) |
+| **Sol menü daraltılmış (☰ / Ctrl+B)** | **Günün özeti** |
+| ![Sol menü daraltılmış](docs/ekran/kenar_dar.png) | ![Günün özeti](docs/ekran/gunun_ozeti.png) |
 
-<p align="center"><img src="docs/ekran/gunun_ozeti.png" alt="Günün özeti" width="460"><br><em>Açılışta gösterilen günün özeti</em></p>
 
 ## Ne yapar?
 
@@ -32,6 +35,15 @@ Uygulamanın tüm özellikleri, kullanıldıkları ekranlarla birlikte aşağıd
 - **Tarih değişikliğinde çakışma yönetimi** — yeni tarih odada başka bir rezervasyonla çakışırsa işlem körü körüne engellenmez. Sistem çakışan rezervasyonu ve bu giriş tarihine sığabilecek **en fazla gece sayısını** gösterir; "gece sayısını N'e düşürmen gerekir, onaylıyor musun?" diye sorar. Onaylarsan gece otomatik N'e düşürülüp uygulanır, onaylamazsan hiçbir şey değişmez.
 - **Ekstra yatak** — odanın kapasitesini o kalış için geçici olarak bir kişi artırır.
 - **Oda Değiştir** — bir oda satırı başka bir odaya taşınır. Taşıma giriş gününde (tüm gece) ya da kalış ortasında (satır iki parçaya bölünerek) yapılabilir. Hedef odanın müsaitliği renk kodlu tabloda gösterilir (yeşil boş / kırmızı dolu / gri seçilemez).
+
+### Misafirler ve Konaklayan Listesi (1.0.6)
+
+- **👥 Misafirler sekmesi** — konaklamış her kişi tek satırda (aynı telefon ya da TC = aynı kişi), son konaklamaya göre sıralı; ad soyad, telefon ya da geldiği yerle "daha önce kalmış mı?" araması. Çift tıklayınca misafir kartı: bütün konaklamaları, 1–5 puan, "sorunlu misafir" işareti (nedeni, işaretleyen kullanıcı ve zamanıyla) ve misafir notları.
+- **Not geçmişi** — rezervasyon, misafir ve referans notları ayrı ayrı tutulur; her notun yanında yazan kullanıcı ve zaman görünür. Notlar rezervasyon detayındaki "Notlar" kutusundan ve misafir/referans pencerelerinden eklenir.
+- **Sorunlu misafir** — rezervasyonu engellemez; yeni rezervasyon alınırken ve detayda nedeniyle birlikte uyarı gösterilir.
+- **Geldiği yer** — Yeni Rezervasyon'da il/ülke (daha önce yazılanlar otomatik tamamlanır, tekrar gelen misafirde dolar).
+- **Konaklayan Listesi** — Bugün / Bu Hafta / Bu Ay / Geçen Ay ya da tarih aralığında kalan kişiler, kişi başı bir satır (ad, TC/belge, uyruk, telefon, geldiği yer, oda, giriş, çıkış, gece, referans, kaydı alan). Excel'e yazdırmaya hazır biçimde aktarılır ya da doğrudan yazdırılır. Puan ve sorunlu bilgisi yalnızca "Puan ve sorunlu bilgisini ekle" işaretlenirse dosyaya/çıktıya girer.
+- **Referanslar** — rezervasyonu ayıran referanslar, getirdikleri rezervasyonlar ve referansa ait notlar.
 
 ### Oda Durumu ve Günlük Görünümler
 
@@ -50,10 +62,10 @@ Uygulamanın tüm özellikleri, kullanıldıkları ekranlarla birlikte aşağıd
 
 ### Kasa, Borçlar ve Misafir Takibi (1.0.5)
 
-- **Gün sonu kasa** — üst çubuktaki "💰 Kasa / Borçlar" penceresinde seçilen gün tahsil edilen gece ücretleri listelenir; ödeme şekline ve tahsil eden kullanıcıya göre toplanır, Excel'e aktarılır.
+- **Gün sonu kasa** — sol kenardaki "💰 Kasa / Borçlar" penceresinde seçilen gün tahsil edilen gece ücretleri listelenir; ödeme şekline ve tahsil eden kullanıcıya göre toplanır, Excel'e aktarılır.
 - **Açık borçlar** — kalınmış ama henüz ödenmemiş geceler oda bazında listelenir; seçili borç tek tıkla tahsil edilir.
 - **Tekrar gelen misafir** — Yeni Rezervasyon'da telefon girilince misafirin önceki konaklamaları gösterilir, ad otomatik dolar.
-- **Misafir kartı** — misafirin bütün konaklamalarında görünen not ve "sorunlu misafir" uyarısı.
+- **Misafir kartı** — misafirin bütün konaklamalarında görünen puan, notlar ve "sorunlu misafir" uyarısı (1.0.6'da genişletildi, yukarıya bakın).
 - **Hesap dökümü** — rezervasyon detayından misafire verilecek PDF döküm alınır (tesis adı Ayarlar'dan).
 - **Günün özeti** — program açılınca bugünkü girişler, çıkışlar, boş odalar, fatura bekleyenler, açık borç ve KBS durumu tek pencerede (Ayarlar'dan kapatılabilir).
 
@@ -88,6 +100,7 @@ Uygulama 1366×768 gibi laptop ekranlarında rahat kullanılacak şekilde yenide
 - **Kompakt tema** — sıkışık sekmeler, grup başlıkları, butonlar ve giriş alanları; aydınlık ve karanlık temalara aynı oranda uygulanır.
 - **Rezervasyon detayı** — tek satır kompakt başlık (isim + durum rozeti + oda özeti + tarih/gece + alınma bilgisi); **QSplitter** düzeni (sol: misafir bilgileri formu, sağ: odalar + odada kalan misafirler); en altta her zaman görünür **aksiyon çubuğu** (toplam tutar, iptal, kapat, kaydet).
 - **Oda işlemleri artık tablo içinde değil** — odalar tablosu saf bilgi tablosudur; bir satır seçilir ve işlemler **tablonun altındaki aksiyon çubuğundan** yapılır: 👥 Kişiler / Check-in · 🛏 +1 Gece · 🛏 −1 Gece · 🗓 Tarih / Gece · 🔁 Oda Değiştir · 🚪 Çıkış Yap. Böylece buton yazıları asla sığmama sorunu yaşamaz.
+- **Sol kenar çubuğu (1.0.6)** — sekmeler ve araç pencereleri (Takvim, Excel Raporu, KBS, Kasa, Günün Özeti) solda alt alta; ☰ düğmesi ya da **Ctrl+B** ile daraltılıp (yalnız simgeler) genişletilir, son hali hatırlanır.
 - **Birincil/ikincil buton stilleri** — önemli eylemler (Check-in'i Tamamla, Bilgileri Kaydet, Çıkış Yap, Yeni Oda Ekle, Fiyatları Kaydet) vurgulu stilde, zararsız eylemler sade.
 
 ## Sürümler ve Dağıtım
@@ -167,6 +180,9 @@ repository.py          Sorgular ve iş kuralları (tarih/gece, çakışma, KBS s
 kbs.py                 KBS (1774 sayılı Kanun) doğrulama mantığı
 kbs_pencere.py         KBS Bildirimi penceresi
 kasa_pencere.py        Kasa / Borçlar penceresi (gün sonu kasa, açık borçlar)
+misafir_pencere.py     Misafirler sekmesi (misafir listesi/kartı, konaklayan listesi, referanslar)
+notlar_widget.py       Not geçmişi kutusu (yazan + zaman)
+kenar_cubugu.py        Daraltılabilir sol kenar çubuğu
 hesap_dokumu.py        Misafire verilecek PDF hesap dökümü
 test_verisi_105.py     Ayrı klasöre örnek verili test veritabanı üretir (gerçek veriye dokunmaz)
 detay_dialog.py        Rezervasyon/misafir düzenleme pencereleri (çok odalı)
@@ -186,6 +202,7 @@ kurulum.iss            Inno Setup kurulum betiği
 
 | Sürüm | Not |
 |-------|-----|
+| 1.0.6 | **Konaklayan Listesi ve misafir takibi**: 👥 Misafirler sekmesi (kişi başı tek satır, ad/telefon/geldiği yerle arama, misafir kartı: konaklamalar, 1–5 puan, sorunlu işareti nedeni ve işaretleyenle); rezervasyon/misafir/referans not geçmişi (yazan kullanıcı ve zamanla); Yeni Rezervasyon'da "Geldiği Yer"; Konaklayan Listesi (gün/hafta/ay/aralık, Excel + yazdırma, puan/sorunlu isteğe bağlı); Referanslar. Sekmeler ve araçlar daraltılabilir sol kenar çubuğuna taşındı (☰ / Ctrl+B). Yeni test: `konaklayan_listesi_test.py`. |
 | 1.0.5 | **Kasa, borç ve misafir takibi**: üst çubukta "💰 Kasa / Borçlar" (gün sonu kasa raporu: o gün tahsil edilenler, ödeme şekli ve tahsil edene göre toplam, Excel; açık borçlar: kalınmış ama ödenmemiş geceler, tek tıkla tahsilat); Yeni Rezervasyon'da telefon girilince tekrar gelen misafir ve önceki konaklamaları, ad otomatik dolar; misafir kartı (bütün konaklamalarda görünen not + "sorunlu misafir" uyarısı); rezervasyon detayından PDF hesap dökümü; açılışta günün özeti (Ayarlar'dan kapatılabilir); İstatistik'e doluluk oranı, ortalama gecelik fiyat, ortalama kalış, önceki ay / geçen yıl karşılaştırması, ödeme şekli ve referans dağılımı; Çıkış ekranında satıra çift tıklayınca borç tahsil edilip çıkış yapılır. Yeni test: `yeni_ozellik_test.py`. |
 | 1.0.4.7 | **Kapsamlı test sonrası hata düzeltmeleri**: iptali geri almada çifte satış engeli; içerideki misafirin çıkışı geçmişe çekilemez; KBS'de düzeltilen misafir tekrar bekleyenlere düşmez, oda değişiminden sonra eklenen kişi bildirilir; konaklamış rezervasyon iptal edilemez; ileri tarihli check-in ve ileri tarihli çıkış engellendi; detaydaki Çıkış butonu aynı gün tahsil/iade akışını kullanır; Erken Çıkış seçili tarihi kullanır; Oda Durumu'nda iptal satırı sızması giderildi; aynı oda iki dönem / eski odaya geri dönüş mümkün; temizlikte/arızalı oda ileri tarihlere açık; kullanıcı pasif yapma ve 'İ' harfli kullanıcı adı düzeltmeleri; giriş günü geçip gelmeyen rezervasyonlar için 'iptal edilsin mi?' sorusu (Gelmedi), çıkışı unutulan kalış planlı çıkışla otomatik kapanır, Erken Çıkış yalnızca içeride kalanları gösterir; oda durumunu değiştirirken yaşanan ~5 sn donma giderildi. Yeni test: `hata_duzeltme_test.py`. |
 | 1.0.4.6 | **Temizlik/arıza çift tıklamayla temize çekme + aynı gün giriş-çıkış hesabı**: "Temizlikte"/"Arızalı" bir oda artık Oda Durumu durum kolonuna, takvim bloğuna ve Rezervasyon Yönetimi "Oda" sütununa çift tıklanarak "Oda temizlendi mi?" onayıyla temiz yapılabiliyor (arızalıda bitiş tarihi de sıfırlanır; dolu odalarda engellenir). Aynı gün girip aynı gün çıkan misafirin bugünkü gecesi artık ücrete giriyor: ödenmemişse "Tahsil edilsin mi?" (ödeme alınıp kaydedilir) ve ödenmişse "İade yapıldı mı?" (kayıt iptal edilir) akışı; çıkış listelerindeki borç sütunu bu geceyi gösterir. Bağımsız Takvim Görünümü'nden yapılan temizlik artık ana penceredeki diğer sekmeleri de otomatik yeniler. |

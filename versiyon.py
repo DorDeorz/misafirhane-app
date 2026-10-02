@@ -5,7 +5,7 @@
 Her sürümde SURUM arttirilir; guncelleme aracı ve kurulum paketi bu değeri kullanır."""
 
 UYGULAMA_ADI = "Misafirhane Rezervasyon"
-SURUM = "1.0.5"
+SURUM = "1.0.6"
 
 YENILIKLER = {
     "1.0.0": "İlk yayın sürümü. Rezervasyon, oda durumu, takvim, rapor ve yedekleme.",
@@ -162,6 +162,20 @@ YENILIKLER = {
              "kalış, önceki ay ve geçen yılla karşılaştırma, ödeme şekli ve referans "
              "dağılımı. Çıkış ekranında satıra çift tıklayınca önce ödenmemiş borç "
              "tahsil edilir (ödeme şekli sorulur, kasaya girer), ardından çıkış yapılır.",
+    "1.0.6": "Misafirler sekmesi: konaklamış her kişi tek satırda (aynı telefon/TC = "
+             "aynı kişi), son konaklamaya göre sıralı; ad soyad, telefon ya da geldiği "
+             "yerle arama. Misafir kartı: bütün konaklamalar, 1-5 puan, 'sorunlu "
+             "misafir' işareti nedeni ve işaretleyenle (rezervasyonu engellemez, "
+             "uyarır). Not geçmişi: rezervasyon, misafir ve referans notları ayrı "
+             "ayrı, her notun yanında yazan kullanıcı ve zaman. Yeni rezervasyonda "
+             "'Geldiği Yer' alanı; tekrar gelen misafirin puanı, notları ve referansın "
+             "notları gösterilir. Konaklayan Listesi: gün / hafta / ay / tarih "
+             "aralığında kalan kişiler kişi başı bir satır, Excel'e aktarma (yazdırmaya "
+             "hazır) ve yazdırma; puan ve sorunlu bilgisi yalnızca istenirse eklenir. "
+             "Referanslar: referansla gelen rezervasyonlar ve referans notları. "
+             "Sekmeler ve araç pencereleri (Takvim, Excel, KBS, Kasa, Günün Özeti) "
+             "soldaki kenar çubuğuna taşındı; ☰ düğmesi ya da Ctrl+B ile daraltılıp "
+             "genişletilir, son hali hatırlanır.",
 }
 
 
