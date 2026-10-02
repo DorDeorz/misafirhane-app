@@ -172,7 +172,10 @@ YENILIKLER = {
              "notları gösterilir. Konaklayan Listesi: gün / hafta / ay / tarih "
              "aralığında kalan kişiler kişi başı bir satır, Excel'e aktarma (yazdırmaya "
              "hazır) ve yazdırma; puan ve sorunlu bilgisi yalnızca istenirse eklenir. "
-             "Referanslar: referansla gelen rezervasyonlar ve referans notları.",
+             "Referanslar: referansla gelen rezervasyonlar ve referans notları. "
+             "Sekmeler ve araç pencereleri (Takvim, Excel, KBS, Kasa, Günün Özeti) "
+             "soldaki kenar çubuğuna taşındı; ☰ düğmesi ya da Ctrl+B ile daraltılıp "
+             "genişletilir, son hali hatırlanır.",
 }
 
 

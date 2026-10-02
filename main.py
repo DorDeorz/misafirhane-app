@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
     QFileDialog, QSplitter, QGridLayout, QFrame, QAbstractItemView, QCheckBox, QCompleter
 )
 from PySide6.QtCore import Qt, QDate, QTimer, QStringListModel
-from PySide6.QtGui import QColor, QIcon
+from PySide6.QtGui import QColor, QIcon, QShortcut, QKeySequence
 from html import escape
 
 import database
@@ -31,6 +31,7 @@ from takvim_widget import TakvimGridWidget
 from detay_dialog import RezervasyonDetayDialog, CheckinDialog, cikis_akisi
 from login_dialog import GirisDialog, IlkKullaniciDialog
 from misafir_pencere import MisafirlerTab
+from kenar_cubugu import KenarCubugu
 
 
 def qdate_to_str(qd: QDate) -> str:
@@ -1410,7 +1411,7 @@ class RezervasyonYonetimiTab(QWidget):
 
         sirala = self.sirala_combo.currentText()
         if sirala.startswith("Giriş Tarihi"):
-            anahtar = lambda r: r["giris_tarihi"]
+            anahtar = lambda r: r["giris_tarihi"] or ""
         else:
             anahtar = lambda r: r["olusturma_tarihi"] or ""
         ters = "Yeni → Eski" in sirala
@@ -2795,6 +2796,7 @@ class AnaPencere(QMainWindow):
         merkez = QWidget()
         ana_layout = QVBoxLayout(merkez)
         ana_layout.setContentsMargins(0, 0, 0, 0)
+        ana_layout.setSpacing(0)
 
         ust_cubuk = QFrame()
         ust_cubuk.setObjectName("ust_bar")
@@ -2815,35 +2817,40 @@ class AnaPencere(QMainWindow):
             cikis_btn.clicked.connect(self.cikis_yap)
             ust_bar.addWidget(cikis_btn)
 
-        takvim_btn = QPushButton("📅 Takvim Görünümü")
-        takvim_btn.setToolTip("Tüm odaların ~16 günlük doluluğunu ayrı pencere olarak gösterir.")
-        takvim_btn.clicked.connect(self.takvim_penceresini_ac)
-        ust_bar.addWidget(takvim_btn)
-
-        excel_rapor_btn = QPushButton("📊 Excel Raporu")
-        excel_rapor_btn.clicked.connect(self.excel_raporu_penceresini_ac)
-        ust_bar.addWidget(excel_rapor_btn)
-
-        kbs_btn = QPushButton("🛂 KBS Bildirimi")
-        kbs_btn.setToolTip(
-            "Kimlik Bildirim Sistemi: bekleyen giriş/çıkış bildirimlerini (yerli/yabancı) "
-            "listeler ve Excel olarak çıkarır. Gönderildi işaretlenenler bir daha görünmez.")
-        kbs_btn.clicked.connect(self.kbs_penceresini_ac)
-        ust_bar.addWidget(kbs_btn)
-
-        kasa_btn = QPushButton("💰 Kasa / Borçlar")
-        kasa_btn.setToolTip("Gün sonu kasa raporu (bugün tahsil edilenler) ve açık borçlar listesi.")
-        kasa_btn.clicked.connect(self.kasa_penceresini_ac)
-        ust_bar.addWidget(kasa_btn)
-
-        ozet_btn = QPushButton("📋 Günün Özeti")
-        ozet_btn.clicked.connect(self.gunun_ozetini_goster)
-        ust_bar.addWidget(ozet_btn)
         ana_layout.addWidget(ust_cubuk)
 
+        # 1.0.6: sekmeler ve araç pencereleri soldaki daraltılabilir kenar
+        # çubuğunda (kenar_cubugu.py); sekme çubuğu gizli, QTabWidget yalnızca
+        # sayfaları taşır (self.tabs arayüzü değişmedi).
+        govde = QHBoxLayout()
+        govde.setContentsMargins(0, 0, 0, 0)
+        govde.setSpacing(0)
+        self.kenar = KenarCubugu()
+        govde.addWidget(self.kenar)
         self.tabs = QTabWidget()
-        ana_layout.addWidget(self.tabs)
+        self.tabs.tabBar().hide()
+        self.tabs.setDocumentMode(True)
+        sayfa_kutusu = QWidget()
+        sayfa_lay = QVBoxLayout(sayfa_kutusu)
+        sayfa_lay.setContentsMargins(8, 6, 8, 6)
+        sayfa_lay.addWidget(self.tabs)
+        govde.addWidget(sayfa_kutusu, 1)
+        ana_layout.addLayout(govde, 1)
         self.setCentralWidget(merkez)
+
+        self.kenar.arac_ekle("📅 Takvim Görünümü", self.takvim_penceresini_ac,
+                             "Tüm odaların ~16 günlük doluluğunu ayrı pencere olarak gösterir.")
+        self.kenar.arac_ekle("📊 Excel Raporu", self.excel_raporu_penceresini_ac)
+        self.kenar.arac_ekle(
+            "🛂 KBS Bildirimi", self.kbs_penceresini_ac,
+            "Kimlik Bildirim Sistemi: bekleyen giriş/çıkış bildirimlerini (yerli/yabancı) "
+            "listeler ve Excel olarak çıkarır. Gönderildi işaretlenenler bir daha görünmez.")
+        self.kenar.arac_ekle("💰 Kasa / Borçlar", lambda: self.kasa_penceresini_ac(),
+                             "Gün sonu kasa raporu (bugün tahsil edilenler) ve açık borçlar listesi.")
+        self.kenar.arac_ekle("📋 Günün Özeti", self.gunun_ozetini_goster)
+        self.kenar.sayfa_secildi.connect(self.tabs.setCurrentIndex)
+        self.tabs.currentChanged.connect(self.kenar.secili_yap)
+        QShortcut(QKeySequence("Ctrl+B"), self, activated=lambda: self.kenar.daralt(not self.kenar.dar))
 
         olusturan = None
         if self.aktif_kullanici is not None:
@@ -2880,6 +2887,9 @@ class AnaPencere(QMainWindow):
         self.tabs.addTab(self.ayarlar_tab, "⚙️ Ayarlar")
         self.tabs.addTab(self.islem_gecmisi_tab, "🗒️ İşlem Geçmişi")
         self.tabs.addTab(self.kullanici_yonetim_tab, "👤 Kullanıcılar")
+        for i in range(self.tabs.count()):
+            self.kenar.sayfa_ekle(self.tabs.tabText(i))
+        self.kenar.secili_yap(self.tabs.currentIndex())
 
     def cikis_yap(self):
         loglama.set_aktif_kullanici(None)

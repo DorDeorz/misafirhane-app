@@ -295,6 +295,25 @@ kontrol("yine geldi" in metin and "hafta sonu gelirler" in metin and "★★★�
         "yeni rezervasyonda misafir notları, referans notu ve puan")
 kontrol(yr.geldigi_yer.text() == "Sivas", "geldiği yer son konaklamadan dolar")
 
+print("Sol kenar çubuğu")
+main.AnaPencere._acilis_akisi = lambda self: None
+ana = main.AnaPencere()
+k = ana.kenar
+kontrol(len(k._sayfa_butonlari) == ana.tabs.count() == 12 and ana.tabs.tabBar().isHidden(),
+        "her sekme için kenar düğmesi, üstteki sekme çubuğu gizli")
+k._sayfa_butonlari[6].click()
+kontrol(ana.tabs.currentWidget() is ana.misafirler_tab, "kenar düğmesi sekmeyi açar")
+ana.tabs.setCurrentIndex(2)
+kontrol(k._sayfa_butonlari[2].isChecked() and not k._sayfa_butonlari[6].isChecked(), "seçili düğme sekmeyle eşleşir")
+kontrol(len(k._tum_butonlar) == 12 + 5, "araç pencereleri de kenarda (Takvim, Excel, KBS, Kasa, Özet)")
+k.daralt(True, animasyonlu=False)
+kontrol(k.width() <= k.DAR and k._sayfa_butonlari[0].text() == "➕"
+        and "Yeni Rezervasyon" in k._sayfa_butonlari[0].toolTip(), "daralınca yalnız simge, ad ipucunda")
+kontrol(database.get_ayar("kenar_cubugu_dar") == "1", "dar durum kaydedilir")
+kontrol(main.AnaPencere().kenar.dar, "uygulama aynı (dar) halde açılır")
+k.daralt(False, animasyonlu=False)
+kontrol(k.maximumWidth() == k.GENIS and "Yeni Rezervasyon" in k._sayfa_butonlari[0].text(), "genişletilir")
+
 print()
 if hatalar:
     print(f"{len(hatalar)} HATA:")
